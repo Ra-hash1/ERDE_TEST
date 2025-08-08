@@ -16,10 +16,8 @@ import {
   Tag,
 } from 'lucide-react';
 
-// API base URL for Vite
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// API endpoints for all cards (loader-specific)
 const apiEndpoints = {
   'HV Battery & BMS': `${API_BASE_URL}/api/hv-battery/loader`,
   'BTMS': `${API_BASE_URL}/api/btms/loader`,
@@ -37,7 +35,6 @@ const apiEndpoints = {
   'Machine Identification': `${API_BASE_URL}/api/machine-identification/loader`,
 };
 
-// Map card titles to WebSocket table names
 const categoryToTableName = {
   'HV Battery & BMS': 'hv_battery',
   'BTMS': 'btms',
@@ -55,7 +52,6 @@ const categoryToTableName = {
   'Machine Identification': 'machine_identification',
 };
 
-// In-memory cache
 const cache = new Map();
 
 function LoaderParameters({ user }) {
@@ -84,19 +80,16 @@ function LoaderParameters({ user }) {
     { title: 'Machine Identification', icon: <Tag className="w-8 h-8 text-indigo-600" />, gradient: 'from-indigo-50 to-blue-100', textColor: 'text-indigo-800' },
   ];
 
-  // Fetch parameters from the backend
   const fetchParameters = async (category, forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      // Check cache first
       if (!forceRefresh && cache.has(category)) {
         setParameters(cache.get(category));
         setLoading(false);
         return;
       }
 
-      // Fetch data with JWT token
       const response = await fetch(`${apiEndpoints[category]}${forceRefresh ? '?force_refresh=true' : ''}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -116,7 +109,6 @@ function LoaderParameters({ user }) {
 
       const { data } = await response.json();
 
-      // Map backend data to table format
       const mappedData = data.map(item => ({
         id: item.parameter_id,
         value: item.numeric_value ?? item.value ?? 'N/A',
@@ -126,7 +118,6 @@ function LoaderParameters({ user }) {
           : item.vehicle_id || 'veh0011',
       }));
 
-      // Cache the response
       cache.set(category, mappedData);
       setParameters(mappedData);
     } catch (err) {
@@ -137,7 +128,6 @@ function LoaderParameters({ user }) {
     }
   };
 
-  // Setup WebSocket for real-time updates
   useEffect(() => {
     if (!user.token || !selectedCategory) return;
 
@@ -151,7 +141,6 @@ function LoaderParameters({ user }) {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        // Process updates for the selected category
         if (message.table_name === categoryToTableName[selectedCategory]) {
           const updatedData = message.data.map(item => ({
             id: item.parameter_id,
@@ -195,7 +184,6 @@ function LoaderParameters({ user }) {
     setParameters([]);
   };
 
-  // Accessibility: Close modal on Esc key
   useEffect(() => {
     const handleEsc = (event) => {
       if (event.key === 'Escape') {
@@ -206,7 +194,6 @@ function LoaderParameters({ user }) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, []);
 
-  // Accessibility: Focus trapping in modal
   useEffect(() => {
     if (isModalOpen && modalRef.current) {
       modalRef.current.focus();
@@ -241,7 +228,6 @@ function LoaderParameters({ user }) {
         </div>
       </main>
 
-      {/* Modal */}
       {isModalOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
