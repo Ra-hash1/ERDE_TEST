@@ -7,6 +7,7 @@ import Dashboard from "./components/Dashboard";
 import VehicleAnalytics from "./components/VehicleAnalytics";
 import ExcavatorParameters from "./components/ExcavatorParameters";
 import LoaderParameters from "./components/LoaderParameters";
+import VehicleData from "./components/VehicleData";
 import axios from "axios";
 
 function App() {
@@ -16,26 +17,26 @@ function App() {
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
-    console.log("Initial user from localStorage:", storedUser); // Debug log
+    console.log("Initial user from localStorage:", storedUser);
     if (storedUser && !user) {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       setShowLogin(false);
       if (window.location.pathname === "/") {
         navigate("/dashboard");
-        console.log("Navigating to /dashboard with user:", parsedUser); // Debug log
+        console.log("Navigating to /dashboard with user:", parsedUser);
       }
     } else if (!storedUser) {
       setShowLogin(true);
-      console.log("No user found, showing login"); // Debug log
+      console.log("No user found, showing login");
     }
-  }, [navigate, user]); // Added user to dependency array to prevent infinite loop
+  }, [navigate, user]);
 
   const handleLogin = (role, name, token, email) => {
     const newUser = { role, name, token, email };
     setUser(newUser);
     localStorage.setItem("user", JSON.stringify(newUser));
-    console.log("Logged in:", { role, name, token, email }); // Debug log
+    console.log("Logged in:", { role, name, token, email });
     setShowLogin(false);
     navigate("/dashboard");
   };
@@ -45,11 +46,11 @@ function App() {
     localStorage.removeItem("user");
     setShowLogin(true);
     navigate("/");
-    console.log("Logged out, navigating to /"); // Debug log
+    console.log("Logged out, navigating to /");
   };
 
   useEffect(() => {
-    console.log("User state updated:", user); // Debug log
+    console.log("User state updated:", user);
     if (user?.token) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${user.token}`;
     } else {
@@ -116,6 +117,19 @@ function App() {
               <>
                 <Header user={user} onLogout={handleLogout} />
                 <LoaderParameters user={user} />
+              </>
+            ) : (
+              <LoginModal setShowLogin={setShowLogin} onSubmit={handleLogin} />
+            )
+          }
+        />
+        <Route
+          path="/vehicle-data"
+          element={
+            user ? (
+              <>
+                <Header user={user} onLogout={handleLogout} />
+                <VehicleData user={user} />
               </>
             ) : (
               <LoginModal setShowLogin={setShowLogin} onSubmit={handleLogin} />
