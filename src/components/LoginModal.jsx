@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { Eye, EyeOff } from 'lucide-react';
+import axios from 'axios';
 import intuteLogo from '../assets/intuteAILogo.png';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function LoginModal({ setShowLogin, onSubmit }) {
   const [email, setEmail] = useState('');
@@ -27,19 +29,18 @@ function LoginModal({ setShowLogin, onSubmit }) {
     setError('');
 
     try {
-      console.log('Sending login request with:', { email, password }); // Debug log
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/login`, {
-        email,
+      console.log('Sending login request with:', { email, password });
+      const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
+        username: email, // Backend expects 'username' field
         password,
       });
-
-      console.log('Login response:', response.data); // Debug log
-      const { role, name, token } = response.data;
-      onSubmit(role, name, token, email);
+      console.log('Login response:', response.data);
+      const { token } = response.data;
+      onSubmit('admin', 'Admin User', token, email);
       setShowLogin(false);
     } catch (err) {
-      console.log('Login error details:', err.response?.data || err.message); // Debug log
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      console.error('Login error:', err.message);
+      setError('Login failed. Please check your credentials and try again.');
     } finally {
       setLoading(false);
     }
