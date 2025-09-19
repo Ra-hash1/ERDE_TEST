@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Thermometer, Battery, Zap, Activity, TrendingUp, AlertTriangle, CheckCircle, BarChart3, Bolt, ArrowLeft, Cpu } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
@@ -11,154 +11,133 @@ function BatteryPage({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalData, setHistoricalData] = useState([]);
   const navigate = useNavigate();
+  const wsRef = useRef(null); // Track WebSocket instance
+  const reconnectAttempts = useRef(0); // Track reconnection attempts
+  const maxReconnectAttempts = 5; // Limit reconnection attempts
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  const fetchConfig = async () => {
+    try {
+      console.log('Fetching config with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/config?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      console.log('Config response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch config: ${response.status} ${response.statusText}`);
+      const config = await response.json();
+      console.log('Config received:', config);
+      return config;
+    } catch (err) {
+      console.error(`Config fetch error: ${err.message}`);
+      return {
+        canMappings: {
+          battery: {
+            moduleTemps: {},
+            cellVoltages: {},
+          },
+        },
+      };
+    }
+  };
+
+  const connectWebSocket = async () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log(`WebSocket already connected for ${selectedVehicle}`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const config = await fetchConfig();
+      const wsUrl = `ws://localhost:5000?device_id=${selectedVehicle}&token=${user?.token}`;
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        console.log(`WebSocket connected for ${selectedVehicle}`);
+        reconnectAttempts.current = 0; // Reset reconnect attempts on success
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          const { battery, timestamp } = message;
+
+          setData(prevData => ({
+            battery: {
+              ...battery,
+              timestamp: timestamp || Date.now(),
+            },
+            config,
+          }));
+
+          setHistoricalData(prev => {
+            const newData = [
+              ...prev,
+              {
+                time: new Date(timestamp || Date.now()).toLocaleTimeString(),
+                soc: parseFloat(battery.soc) || 0,
+                stackVoltage: parseFloat(battery.stackVoltage) || 0,
+                avgTemp: parseFloat(battery.avgTemp) || 0,
+              },
+            ];
+            return newData.slice(-10); // Keep last 10 points
+          });
+
+          if (isInitialLoad) {
+            setIsInitialLoad(false);
+            setLoading(false);
+          }
+        } catch (err) {
+          setError(`Failed to parse WebSocket data: ${err.message}`);
+          if (isInitialLoad) {
+            setLoading(false);
+          }
+        }
+      };
+
+      wsRef.current.onerror = (err) => {
+        console.error(`WebSocket error for ${selectedVehicle}:`, err);
+        setError(`WebSocket error: ${err.message || 'Connection failed'}`);
+        setLoading(false);
+      };
+
+      wsRef.current.onclose = () => {
+        console.log(`WebSocket closed for ${selectedVehicle}.`);
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000); // Exponential backoff, max 30s
+          console.log(`Reconnecting in ${delay}ms... Attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts}`);
+          setTimeout(() => {
+            reconnectAttempts.current += 1;
+            connectWebSocket();
+          }, delay);
+        } else {
+          setError('Max WebSocket reconnection attempts reached');
+          setLoading(false);
+        }
+      };
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async (isInitial = false) => {
-      try {
-        if (isInitial) {
-          setLoading(true);
-        }
-        Math.random(); // Ensure randomization
+    if (user?.token) {
+      connectWebSocket();
+    } else {
+      setError('No authentication token provided');
+      setLoading(false);
+    }
 
-        const mockConfig = {
-          canMappings: {
-            battery: {
-              soc: 'x201',
-              stackVoltage: 'x201',
-              batteryStatus: 'x202',
-              maxVoltage: 'x203',
-              minVoltage: 'x203',
-              avgVoltage: 'x203',
-              maxTemp: 'x204',
-              minTemp: 'x204',
-              avgTemp: 'x204',
-              current: 'x262',
-              chargerCurrentDemand: 'x263',
-              chargerVoltageDemand: 'x264',
-              moduleTemps: {
-                module1: ['x205', 'x206', 'x207'],
-                module2: ['x207', 'x209'],
-                module3: ['x209', 'x211'],
-                module4: ['x211', 'x213'],
-                module5: ['x214', 'x216'],
-              },
-              cellVoltages: {
-                module1: ['x217', 'x218', 'x219', 'x220', 'x221', 'x222', 'x223', 'x224', 'x225'],
-                module2: ['x226', 'x227', 'x228', 'x229', 'x230', 'x231', 'x232', 'x233', 'x234'],
-                module3: ['x235', 'x236', 'x237', 'x238', 'x239', 'x240', 'x241', 'x242', 'x243'],
-                module4: ['x244', 'x245', 'x246', 'x247', 'x248', 'x249', 'x250', 'x251', 'x252'],
-                module5: ['x253', 'x254', 'x255', 'x256', 'x257', 'x258', 'x259', 'x260', 'x261'],
-              },
-            },
-          },
-        };
-
-        // Vehicle-specific base values
-        const baseValues = {
-          VCL001: {
-            soc: 50, // %
-            stackVoltage: 48, // V
-            baseVoltage: 3.7, // V
-            baseTemp: 25, // °C
-            current: 0, // A
-            chargerCurrentDemand: 5, // A
-            chargerVoltageDemand: 50, // V
-          },
-          VCL002: {
-            soc: 40, // Lower SOC for VCL002
-            stackVoltage: 46,
-            baseVoltage: 3.6,
-            baseTemp: 22,
-            current: -5,
-            chargerCurrentDemand: 4,
-            chargerVoltageDemand: 48,
-          },
-        };
-
-        const base = baseValues[selectedVehicle] || baseValues.VCL001;
-
-        const soc = Math.round(base.soc + Math.random() * 20);
-        const stackVoltage = (base.stackVoltage - 5 + Math.random() * 10).toFixed(1);
-        const batteryStatus = Math.random() > 0.8 ? 'Warning' : Math.random() > 0.6 ? 'Error' : 'Active';
-        const baseVoltage = base.baseVoltage + Math.random() * 0.2;
-        const voltageSpread = 0.1 + Math.random() * 0.2;
-        const maxVoltage = (baseVoltage + voltageSpread / 2).toFixed(1);
-        const minVoltage = (baseVoltage - voltageSpread / 2).toFixed(1);
-        const avgVoltage = baseVoltage.toFixed(1);
-        const baseTemp = base.baseTemp + Math.random() * 5;
-        const tempSpread = 3 + Math.random() * 5;
-        const maxTemp = Math.round(baseTemp + tempSpread / 2);
-        const minTemp = Math.round(baseTemp - tempSpread / 2);
-        const avgTemp = Math.round(baseTemp);
-        const current = (base.current - 10 + Math.random() * 20).toFixed(1);
-        const chargerCurrentDemand = (base.chargerCurrentDemand + Math.random() * 5).toFixed(1);
-        const chargerVoltageDemand = (base.chargerVoltageDemand - 2 + Math.random() * 4).toFixed(1);
-
-        const moduleTemps = {
-          module1Temps: Array.from({ length: 3 }, () => Math.round(baseTemp - 2 + Math.random() * 4)),
-          module2Temps: Array.from({ length: 2 }, () => Math.round(baseTemp - 2 + Math.random() * 4)),
-          module3Temps: Array.from({ length: 2 }, () => Math.round(baseTemp - 2 + Math.random() * 4)),
-          module4Temps: Array.from({ length: 2 }, () => Math.round(baseTemp - 2 + Math.random() * 4)),
-          module5Temps: Array.from({ length: 2 }, () => Math.round(baseTemp - 2 + Math.random() * 4)),
-        };
-
-        const moduleCellsAvg = {};
-        ['module1', 'module2', 'module3', 'module4', 'module5'].forEach(mod => {
-          moduleCellsAvg[`${mod}CellsAvg`] = (baseVoltage - 0.1 + Math.random() * 0.2).toFixed(2);
-        });
-
-        const mockBatteryData = {
-          deviceId: selectedVehicle,
-          soc,
-          stackVoltage,
-          batteryStatus,
-          maxVoltage,
-          minVoltage,
-          avgVoltage,
-          maxTemp,
-          minTemp,
-          avgTemp,
-          current,
-          chargerCurrentDemand,
-          chargerVoltageDemand,
-          ...moduleTemps,
-          ...moduleCellsAvg,
-          timestamp: Date.now(),
-        };
-
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        setData(prevData => ({
-          battery: mockBatteryData,
-          config: mockConfig,
-        }));
-
-        // Add to historical data for trend visualization
-        setHistoricalData(prev => {
-          const newData = [...prev, {
-            time: new Date().toLocaleTimeString(),
-            soc,
-            stackVoltage: parseFloat(stackVoltage),
-            avgTemp,
-          }];
-          return newData.slice(-10); // Keep last 10 points
-        });
-
-        if (isInitial) {
-          setIsInitialLoad(false);
-          setLoading(false);
-        }
-      } catch (err) {
-        setError(`Failed to fetch battery data for ${selectedVehicle}`);
-        if (isInitial) {
-          setLoading(false);
-        }
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
     };
-
-    fetchData(true); // Initial fetch with loading
-    const interval = setInterval(() => fetchData(false), 1000); // Auto-refresh every 1 second
-    return () => clearInterval(interval);
   }, [user?.token, selectedVehicle]);
 
   if (loading && isInitialLoad) {
@@ -201,27 +180,27 @@ function BatteryPage({ user }) {
   ];
 
   const voltageData = [
-    { name: 'Max', value: parseFloat(data.battery.maxVoltage), fill: '#f59e0b' },
-    { name: 'Avg', value: parseFloat(data.battery.avgVoltage), fill: '#3b82f6' },
-    { name: 'Min', value: parseFloat(data.battery.minVoltage), fill: '#ef4444' },
+    { name: 'Max', value: parseFloat(data.battery.maxVoltage) || 0, fill: '#f59e0b' },
+    { name: 'Avg', value: parseFloat(data.battery.avgVoltage) || 0, fill: '#3b82f6' },
+    { name: 'Min', value: parseFloat(data.battery.minVoltage) || 0, fill: '#ef4444' },
   ];
 
   const tempData = [
-    { name: 'Max', value: data.battery.maxTemp, fill: '#ef4444' },
-    { name: 'Avg', value: data.battery.avgTemp, fill: '#f59e0b' },
-    { name: 'Min', value: data.battery.minTemp, fill: '#10b981' },
+    { name: 'Max', value: parseFloat(data.battery.maxTemp) || 0, fill: '#ef4444' },
+    { name: 'Avg', value: parseFloat(data.battery.avgTemp) || 0, fill: '#f59e0b' },
+    { name: 'Min', value: parseFloat(data.battery.minTemp) || 0, fill: '#10b981' },
   ];
 
   const currentData = [
-    { name: 'Current', value: parseFloat(data.battery.current), unit: 'A', color: '#3b82f6' },
-    { name: 'Charger Current', value: parseFloat(data.battery.chargerCurrentDemand), unit: 'A', color: '#f59e0b' },
-    { name: 'Charger Voltage', value: parseFloat(data.battery.chargerVoltageDemand), unit: 'V', color: '#10b981' },
+    { name: 'Current', value: parseFloat(data.battery.current) || 0, unit: 'A', color: '#3b82f6' },
+    { name: 'Charger Current', value: parseFloat(data.battery.chargerCurrentDemand) || 0, unit: 'A', color: '#f59e0b' },
+    { name: 'Charger Voltage', value: parseFloat(data.battery.chargerVoltageDemand) || 0, unit: 'V', color: '#10b981' },
   ];
 
   const moduleData = Object.entries(data.config?.canMappings.battery.moduleTemps || {}).map(([module, _]) => ({
     name: module.replace('module', 'M'),
-    temp: Math.max(...(data.battery[`${module}Temps`] || [0])),
-    voltage: parseFloat(data.battery[`${module}CellsAvg`] || 0),
+    temp: parseFloat(data.battery[`${module}Temps`]?.split(', ')[0]) || 0,
+    voltage: parseFloat(data.battery[`${module}CellsAvg`]) || 0,
   }));
 
   const getStatusColor = (status) => {
@@ -245,7 +224,7 @@ function BatteryPage({ user }) {
   };
 
   const socPercentage = parseFloat(data.battery.soc).toFixed(1);
-  const voltagePercentage = ((parseFloat(data.battery.stackVoltage) / 60) * 100).toFixed(1);
+  const voltagePercentage = ((parseFloat(data.battery.stackVoltage) / 600) * 100).toFixed(1); // Adjusted for typical EV stack voltage (~600V)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-black relative overflow-hidden">
@@ -537,7 +516,7 @@ function BatteryPage({ user }) {
                       <div 
                         className="h-full rounded-full transition-all duration-1000 ease-out relative"
                         style={{
-                          width: `${(item.value / (item.unit === 'V' ? 60 : 20)) * 100}%`,
+                          width: `${(item.value / (item.unit === 'V' ? 600 : 20)) * 100}%`, // Adjusted for typical EV charger voltage
                           backgroundColor: item.color
                         }}
                       >
@@ -674,7 +653,7 @@ function BatteryPage({ user }) {
                     <h4 className="text-indigo-400 font-semibold text-lg mb-2">{module.toUpperCase()}</h4>
                     <div className="text-white text-xl font-bold mb-2">{data.battery[`${module}CellsAvg`]} V</div>
                     <div className="text-gray-400 text-sm mb-2">Avg Cell Voltage</div>
-                    <div className="text-gray-400 text-sm">Temps: {(data.battery[`${module}Temps`] || []).join('°, ')}°C</div>
+                    <div className="text-gray-400 text-sm">Temps: {(data.battery[`${module}Temps`] || '').split(', ').join('°, ')}°C</div>
                     
                     <div className="mt-4 w-full bg-gray-700 rounded-full h-1">
                       <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-cyan-400 animate-pulse" style={{width: '85%'}}></div>

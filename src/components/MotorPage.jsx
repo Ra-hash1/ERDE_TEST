@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Settings, Thermometer, AlertTriangle, Activity, ArrowLeft, Bolt, BarChart3, TrendingUp, CheckCircle, Zap, Cpu } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
@@ -11,142 +11,227 @@ function MotorPage({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalData, setHistoricalData] = useState([]);
   const navigate = useNavigate();
+  const wsRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  const fetchConfig = async () => {
+    try {
+      console.log('Fetching config with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/config?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      console.log('Config response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch config: ${response.status} ${response.statusText}`);
+      const configData = await response.json();
+      console.log('Config received:', configData);
+      return configData;
+    } catch (err) {
+      console.error(`Config fetch error: ${err.message}`);
+      return {
+        canMappings: {
+          motor: {
+            torqueLimit: 'x301',
+            torqueValue: 'x302',
+            motorSpeed: 'x303',
+            rotationDirection: 'x304',
+            operationMode: 'x305',
+            mcuEnable: 'x306',
+            mcuDrivePermit: 'x307',
+            mcuOffPermit: 'x308',
+            totalFaultStatus: 'x309',
+            acCurrent: 'x310',
+            acVoltage: 'x311',
+            dcVoltage: 'x312',
+            motorTemp: 'x313',
+            mcuTemp: 'x314',
+            radiatorTemp: 'x315',
+            motorQuantity: 'x316',
+            motorNum: 'x317',
+            mcuManufacturer: 'x318',
+          },
+        },
+      };
+    }
+  };
+
+  const fetchMotorData = async () => {
+    try {
+      console.log('Fetching motor data with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/motor?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      console.log('Motor response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch motor data: ${response.status} ${response.statusText}`);
+      const motorData = await response.json();
+      console.log('Motor data received:', motorData);
+      
+      // Assuming the API returns an array, select the latest entry based on timestamp
+      if (Array.isArray(motorData)) {
+        if (motorData.length === 0) {
+          throw new Error('Motor data array is empty');
+        }
+        const latestMotorData = motorData.reduce((latest, current) => {
+          return (!latest.timestamp || (current.timestamp && current.timestamp > latest.timestamp)) ? current : latest;
+        }, motorData[0]);
+        return { ...latestMotorData, timestamp: latestMotorData.timestamp || Date.now() };
+      }
+      return { ...motorData, timestamp: motorData.timestamp || Date.now() };
+    } catch (err) {
+      console.error(`Motor fetch error: ${err.message}`);
+      return {
+        torqueLimit: 200,
+        torqueValue: 150,
+        motorSpeed: 3000,
+        rotationDirection: 'Forward',
+        operationMode: 'Drive',
+        mcuEnable: 'Enabled',
+        mcuDrivePermit: 'Permitted',
+        mcuOffPermit: 'Permitted',
+        totalFaultStatus: 'Normal',
+        acCurrent: 100,
+        acVoltage: 400,
+        dcVoltage: 48,
+        motorTemp: 60,
+        mcuTemp: 50,
+        radiatorTemp: 45,
+        motorQuantity: selectedVehicle === 'VCL001' ? 2 : 1,
+        motorNum: selectedVehicle === 'VCL001' ? 'Motor 1' : 'Motor A',
+        mcuManufacturer: selectedVehicle === 'VCL001' ? 'CETL Corp' : 'MotorTech Inc',
+        timestamp: Date.now(),
+      };
+    }
+  };
+
+  const connectWebSocket = async () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log(`WebSocket already connected for ${selectedVehicle}`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const configData = await fetchConfig();
+      const initialMotorData = await fetchMotorData();
+      setData({ motor: initialMotorData, config: configData });
+
+      // Initialize historical data with initial fetch
+      setHistoricalData(prev => {
+        const newData = [
+          ...prev,
+          {
+            time: new Date(initialMotorData.timestamp || Date.now()).toLocaleTimeString(),
+            torque: parseFloat(initialMotorData.torqueValue) || 0,
+            speed: parseFloat(initialMotorData.motorSpeed) || 0,
+            temp: parseFloat(initialMotorData.motorTemp) || 0,
+          },
+        ];
+        return newData.slice(-10);
+      });
+
+      const wsUrl = `ws://localhost:5000?device_id=${selectedVehicle}&token=${user?.token}`;
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        console.log(`WebSocket connected for ${selectedVehicle}`);
+        reconnectAttempts.current = 0;
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('WebSocket message received:', message);
+          const { motor } = message;
+          if (motor) {
+            // Handle single object or array
+            const latestMotor = Array.isArray(motor)
+              ? motor.reduce((latest, current) => {
+                  return (!latest.timestamp || (current.timestamp && current.timestamp > latest.timestamp)) ? current : latest;
+                }, motor[0]) || motor[0]
+              : motor;
+
+            setData(prevData => ({
+              motor: {
+                ...latestMotor,
+                timestamp: latestMotor.timestamp || Date.now(),
+              },
+              config: prevData.config,
+            }));
+
+            setHistoricalData(prev => {
+              const newData = [
+                ...prev,
+                {
+                  time: new Date(latestMotor.timestamp || Date.now()).toLocaleTimeString(),
+                  torque: parseFloat(latestMotor.torqueValue) || 0,
+                  speed: parseFloat(latestMotor.motorSpeed) || 0,
+                  temp: parseFloat(latestMotor.motorTemp) || 0,
+                },
+              ];
+              return newData.slice(-10);
+            });
+
+            if (isInitialLoad) {
+              setIsInitialLoad(false);
+              setLoading(false);
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to parse WebSocket data: ${err.message}`);
+          setError(`Failed to parse WebSocket data: ${err.message}`);
+          if (isInitialLoad) {
+            setLoading(false);
+          }
+        }
+      };
+
+      wsRef.current.onerror = (err) => {
+        console.error(`WebSocket error for ${selectedVehicle}:`, err);
+        setError(`WebSocket error: ${err.message || 'Connection failed'}`);
+        setLoading(false);
+      };
+
+      wsRef.current.onclose = () => {
+        console.log(`WebSocket closed for ${selectedVehicle}.`);
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
+          console.log(`Reconnecting in ${delay}ms... Attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts}`);
+          setTimeout(() => {
+            reconnectAttempts.current += 1;
+            connectWebSocket();
+          }, delay);
+        } else {
+          setError('Max WebSocket reconnection attempts reached');
+          setLoading(false);
+        }
+      };
+    } catch (err) {
+      console.error(`WebSocket connection error: ${err.message}`);
+      setError(err.message);
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async (isInitial = false) => {
-      try {
-        if (isInitial) {
-          setLoading(true);
-        }
-        Math.random(); // Ensure randomization
+    if (user?.token) {
+      connectWebSocket();
+    } else {
+      setError('No authentication token provided');
+      setLoading(false);
+    }
 
-        const mockConfig = {
-          canMappings: {
-            motor: {
-              torqueLimit: 'x301',
-              torqueValue: 'x302',
-              motorSpeed: 'x303',
-              rotationDirection: 'x304',
-              operationMode: 'x305',
-              mcuEnable: 'x306',
-              mcuDrivePermit: 'x307',
-              mcuOffPermit: 'x308',
-              totalFaultStatus: 'x309',
-              acCurrent: 'x310',
-              acVoltage: 'x311',
-              dcVoltage: 'x312',
-              motorTemp: 'x313',
-              mcuTemp: 'x314',
-              radiatorTemp: 'x315',
-              motorQuantity: 'x316',
-              motorNum: 'x317',
-              mcuManufacturer: 'x318',
-            },
-          },
-        };
-
-        // Vehicle-specific base values
-        const baseValues = {
-          VCL001: {
-            torqueLimit: 200, // Nm
-            torqueValue: 150,
-            motorSpeed: 3000, // RPM
-            motorTemp: 60, // °C
-            mcuTemp: 50,
-            radiatorTemp: 45,
-            acCurrent: 100, // A
-            acVoltage: 400, // V
-            dcVoltage: 48, // V
-          },
-          VCL002: {
-            torqueLimit: 180, // Lower torque for VCL002
-            torqueValue: 120,
-            motorSpeed: 2500,
-            motorTemp: 55,
-            mcuTemp: 45,
-            radiatorTemp: 40,
-            acCurrent: 90,
-            acVoltage: 380,
-            dcVoltage: 46,
-          },
-        };
-
-        const base = baseValues[selectedVehicle] || baseValues.VCL001;
-
-        const torqueLimit = Math.round(base.torqueLimit - 20 + Math.random() * 40);
-        const torqueValue = Math.round(base.torqueValue - 15 + Math.random() * 30);
-        const motorSpeed = Math.round(base.motorSpeed - 500 + Math.random() * 1000);
-        const rotationDirection = Math.random() > 0.5 ? 'Forward' : 'Reverse';
-        const operationMode = Math.random() > 0.5 ? 'Drive' : 'Idle';
-        const mcuEnable = Math.random() > 0.5 ? 'Enabled' : 'Disabled';
-        const mcuDrivePermit = Math.random() > 0.5 ? 'Permitted' : 'Denied';
-        const mcuOffPermit = Math.random() > 0.5 ? 'Permitted' : 'Denied';
-        const totalFaultStatus = Math.random() > 0.8 ? 'Warning' : Math.random() > 0.6 ? 'Error' : 'Normal';
-        const acCurrent = (base.acCurrent - 10 + Math.random() * 20).toFixed(1);
-        const acVoltage = (base.acVoltage - 20 + Math.random() * 40).toFixed(1);
-        const dcVoltage = (base.dcVoltage - 5 + Math.random() * 10).toFixed(1);
-        const motorTemp = Math.round(base.motorTemp - 5 + Math.random() * 10);
-        const mcuTemp = Math.round(base.mcuTemp - 5 + Math.random() * 10);
-        const radiatorTemp = Math.round(base.radiatorTemp - 5 + Math.random() * 10);
-        const motorQuantity = selectedVehicle === 'VCL001' ? 2 : 1;
-        const motorNum = selectedVehicle === 'VCL001' ? 'Motor 1' : 'Motor A';
-        const mcuManufacturer = selectedVehicle === 'VCL001' ? 'CETL Corp' : 'MotorTech Inc';
-
-        const mockMotorData = {
-          deviceId: selectedVehicle,
-          torqueLimit,
-          torqueValue,
-          motorSpeed,
-          rotationDirection,
-          operationMode,
-          mcuEnable,
-          mcuDrivePermit,
-          mcuOffPermit,
-          totalFaultStatus,
-          acCurrent,
-          acVoltage,
-          dcVoltage,
-          motorTemp,
-          mcuTemp,
-          radiatorTemp,
-          motorQuantity,
-          motorNum,
-          mcuManufacturer,
-          timestamp: Date.now(),
-        };
-
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        setData(prevData => ({
-          motor: mockMotorData,
-          config: mockConfig,
-        }));
-
-        setHistoricalData(prev => {
-          const newData = [...prev, {
-            time: new Date().toLocaleTimeString(),
-            torque: torqueValue,
-            speed: motorSpeed,
-            temp: motorTemp,
-          }];
-          return newData.slice(-10);
-        });
-
-        if (isInitial) {
-          setIsInitialLoad(false);
-          setLoading(false);
-        }
-      } catch (err) {
-        setError(`Failed to fetch motor data for ${selectedVehicle}`);
-        if (isInitial) {
-          setLoading(false);
-        }
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
     };
-
-    fetchData(true);
-    const interval = setInterval(() => fetchData(false), 2000);
-    return () => clearInterval(interval);
   }, [user?.token, selectedVehicle]);
 
   if (loading && isInitialLoad) {
@@ -193,15 +278,15 @@ function MotorPage({ user }) {
   ];
 
   const tempData = [
-    { name: 'Motor', value: data.motor.motorTemp, fill: '#ef4444' },
-    { name: 'MCU', value: data.motor.mcuTemp, fill: '#f59e0b' },
-    { name: 'Radiator', value: data.motor.radiatorTemp, fill: '#10b981' },
+    { name: 'Motor', value: parseFloat(data.motor.motorTemp) || 0, fill: '#ef4444' },
+    { name: 'MCU', value: parseFloat(data.motor.mcuTemp) || 0, fill: '#f59e0b' },
+    { name: 'Radiator', value: parseFloat(data.motor.radiatorTemp) || 0, fill: '#10b981' },
   ];
 
   const electricalData = [
-    { name: 'AC Current', value: parseFloat(data.motor.acCurrent), unit: 'A', color: '#3b82f6' },
-    { name: 'AC Voltage', value: parseFloat(data.motor.acVoltage), unit: 'V', color: '#f59e0b' },
-    { name: 'DC Voltage', value: parseFloat(data.motor.dcVoltage), unit: 'V', color: '#10b981' },
+    { name: 'AC Current', value: parseFloat(data.motor.acCurrent) || 0, unit: 'A', color: '#3b82f6' },
+    { name: 'AC Voltage', value: parseFloat(data.motor.acVoltage) || 0, unit: 'V', color: '#f59e0b' },
+    { name: 'DC Voltage', value: parseFloat(data.motor.dcVoltage) || 0, unit: 'V', color: '#10b981' },
   ];
 
   const getStatusColor = (status) => {
@@ -227,7 +312,6 @@ function MotorPage({ user }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-black relative overflow-hidden">
-      {/* Enhanced Background Effects */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-full">
           <div className="w-full h-full bg-gradient-to-b from-orange-400 via-red-400 to-purple-500 animate-pulse"></div>
@@ -236,7 +320,6 @@ function MotorPage({ user }) {
         <div className="absolute top-0 left-1/4 w-16 h-full bg-gradient-to-b from-green-400 to-transparent opacity-30"></div>
       </div>
 
-      {/* Floating Particles */}
       <div className="absolute inset-0 opacity-20">
         {[...Array(12)].map((_, i) => (
           <div
@@ -252,22 +335,20 @@ function MotorPage({ user }) {
         ))}
       </div>
 
-      {/* Grid Pattern */}
       <div className="absolute inset-0 opacity-5">
-        <div 
-          className="w-full h-full" 
+        <div
+          className="w-full h-full"
           style={{
             backgroundImage: `
               linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
               linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
             `,
-            backgroundSize: '50px 50px'
+            backgroundSize: '50px 50px',
           }}
         ></div>
       </div>
 
       <div className="relative z-10 p-6">
-        {/* Enhanced Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-4">
             <button
@@ -300,13 +381,17 @@ function MotorPage({ user }) {
                 </span>
               </div>
             </div>
-            <div className={`flex items-center space-x-3 bg-black/30 backdrop-blur-sm rounded-xl px-4 py-2 border transition-all duration-300 ${
-              data.motor.totalFaultStatus === 'Normal' ? 'border-green-500/30' : 
-              data.motor.totalFaultStatus === 'Warning' ? 'border-yellow-500/30' : 'border-red-500/30'
-            }`}>
+            <div
+              className={`flex items-center space-x-3 bg-black/30 backdrop-blur-sm rounded-xl px-4 py-2 border transition-all duration-300 ${
+                data.motor.totalFaultStatus === 'Normal' ? 'border-green-500/30' :
+                data.motor.totalFaultStatus === 'Warning' ? 'border-yellow-500/30' : 'border-red-500/30'
+              }`}
+            >
               <div className="relative">
                 {getStatusIcon(data.motor.totalFaultStatus)}
-                <div className={`absolute inset-0 rounded-full animate-ping ${getStatusColor(data.motor.totalFaultStatus).replace('text-', 'bg-')}`}></div>
+                <div
+                  className={`absolute inset-0 rounded-full animate-ping ${getStatusColor(data.motor.totalFaultStatus).replace('text-', 'bg-')}`}
+                ></div>
               </div>
               <span className={`font-bold text-xl ${getStatusColor(data.motor.totalFaultStatus)}`}>
                 SYSTEM {data.motor.totalFaultStatus?.toUpperCase()}
@@ -315,18 +400,16 @@ function MotorPage({ user }) {
           </div>
         </div>
 
-        {/* Enhanced Main Metrics Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Torque Analysis */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-emerald-600 rounded-3xl blur opacity-30 group-hover:opacity-50 transition duration-500"></div>
             <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-green-500/30 shadow-2xl p-6 backdrop-blur-sm">
               <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-green-500 via-emerald-500 to-green-500 rounded-t-3xl"></div>
-              
+
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-bold text-xl flex items-center">
                   <div className="relative mr-3">
-                    <Settings className="w-7 h-7 text-green-400 animate-spin" style={{animationDuration: '3s'}} />
+                    <Settings className="w-7 h-7 text-green-400 animate-spin" style={{ animationDuration: '3s' }} />
                     <div className="absolute inset-0 w-7 h-7 border-2 border-green-400/30 rounded-full animate-ping"></div>
                   </div>
                   Torque Performance
@@ -365,9 +448,9 @@ function MotorPage({ user }) {
               </div>
 
               <div className="w-full bg-gray-700 rounded-full h-3 mb-2 overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-gradient-to-r from-green-500 to-emerald-400 rounded-full transition-all duration-1000 ease-out relative"
-                  style={{width: `${torquePercentage}%`}}
+                  style={{ width: `${torquePercentage}%` }}
                 >
                   <div className="absolute inset-0 bg-white/30 animate-pulse rounded-full"></div>
                 </div>
@@ -376,12 +459,11 @@ function MotorPage({ user }) {
             </div>
           </div>
 
-          {/* Motor Speed */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-400 to-purple-600 rounded-3xl blur opacity-30 group-hover:opacity-50 transition duration-500"></div>
             <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-blue-500/30 shadow-2xl p-6 backdrop-blur-sm">
               <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 rounded-t-3xl"></div>
-              
+
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-bold text-xl flex items-center">
                   <div className="relative mr-3">
@@ -399,11 +481,7 @@ function MotorPage({ user }) {
               <div className="relative h-48 mb-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadialBarChart data={speedData} innerRadius="60%" outerRadius="90%" startAngle={180} endAngle={0}>
-                    <RadialBar
-                      dataKey="value"
-                      cornerRadius="10"
-                      fill="#3b82f6"
-                    />
+                    <RadialBar dataKey="value" cornerRadius="10" fill="#3b82f6" />
                   </RadialBarChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -423,12 +501,11 @@ function MotorPage({ user }) {
             </div>
           </div>
 
-          {/* Temperature Monitor */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-red-400 to-orange-600 rounded-3xl blur opacity-30 group-hover:opacity-50 transition duration-500"></div>
             <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-red-500/30 shadow-2xl p-6 backdrop-blur-sm">
               <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 rounded-t-3xl"></div>
-              
+
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-bold text-xl flex items-center">
                   <div className="relative mr-3">
@@ -439,7 +516,7 @@ function MotorPage({ user }) {
                 </h3>
                 <div className="text-right">
                   <div className="text-sm text-gray-400">Peak</div>
-                  <div className="text-lg font-bold text-red-400">{Math.max(data.motor.motorTemp, data.motor.mcuTemp, data.motor.radiatorTemp)}°C</div>
+                  <div className="text-lg font-bold text-red-400">{Math.max(parseFloat(data.motor.motorTemp) || 0, parseFloat(data.motor.mcuTemp) || 0, parseFloat(data.motor.radiatorTemp) || 0)}°C</div>
                 </div>
               </div>
 
@@ -451,11 +528,11 @@ function MotorPage({ user }) {
                       <span className="text-white font-bold">{temp.value}°C</span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
-                      <div 
+                      <div
                         className="h-full rounded-full transition-all duration-1000 ease-out relative"
                         style={{
                           width: `${(temp.value / 100) * 100}%`,
-                          background: `linear-gradient(to right, ${temp.fill}, ${temp.fill}dd)`
+                          background: `linear-gradient(to right, ${temp.fill}, ${temp.fill}dd)`,
                         }}
                       >
                         <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full"></div>
@@ -476,14 +553,12 @@ function MotorPage({ user }) {
           </div>
         </div>
 
-        {/* Enhanced Secondary Metrics */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Electrical Subsystem */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-purple-400 to-pink-600 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
             <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-purple-500/30 shadow-2xl p-6 backdrop-blur-sm">
               <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 rounded-t-3xl"></div>
-              
+
               <h3 className="text-white font-bold text-2xl flex items-center mb-6">
                 <div className="relative mr-3">
                   <Bolt className="w-8 h-8 text-purple-400" />
@@ -497,10 +572,7 @@ function MotorPage({ user }) {
                   <div key={index} className="bg-black/40 rounded-2xl p-4 border border-purple-500/20 hover:border-purple-400/40 transition-all duration-300 backdrop-blur-sm">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-3">
-                        <div 
-                          className="w-4 h-4 rounded-full animate-pulse" 
-                          style={{backgroundColor: item.color}}
-                        ></div>
+                        <div className="w-4 h-4 rounded-full animate-pulse" style={{ backgroundColor: item.color }}></div>
                         <span className="text-gray-300 font-medium">{item.name}</span>
                       </div>
                       <div className="text-right">
@@ -509,11 +581,11 @@ function MotorPage({ user }) {
                       </div>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                      <div 
+                      <div
                         className="h-full rounded-full transition-all duration-1000 ease-out relative"
                         style={{
                           width: `${(item.value / (item.name.includes('Voltage') ? 500 : 150)) * 100}%`,
-                          backgroundColor: item.color
+                          backgroundColor: item.color,
                         }}
                       >
                         <div className="absolute inset-0 bg-white/30 animate-pulse rounded-full"></div>
@@ -525,12 +597,11 @@ function MotorPage({ user }) {
             </div>
           </div>
 
-          {/* System Status */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-cyan-600 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
             <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-green-500/30 shadow-2xl p-6 backdrop-blur-sm">
               <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-green-500 via-emerald-500 to-cyan-500 rounded-t-3xl"></div>
-              
+
               <h3 className="text-white font-bold text-2xl flex items-center mb-6">
                 <div className="relative mr-3">
                   <BarChart3 className="w-8 h-8 text-green-400" />
@@ -541,56 +612,62 @@ function MotorPage({ user }) {
 
               <div className="space-y-4">
                 {[
-                  { 
-                    id: 'Operation Mode', 
-                    value: data.motor.operationMode, 
+                  {
+                    id: 'Operation Mode',
+                    value: data.motor.operationMode,
                     icon: <Activity className="w-5 h-5" />,
-                    status: data.motor.operationMode === 'Drive' ? 'active' : 'idle'
+                    status: data.motor.operationMode === 'Drive' ? 'active' : 'idle',
                   },
-                  { 
-                    id: 'MCU Enable State', 
-                    value: data.motor.mcuEnable, 
+                  {
+                    id: 'MCU Enable State',
+                    value: data.motor.mcuEnable,
                     icon: <Cpu className="w-5 h-5" />,
-                    status: data.motor.mcuEnable === 'Enabled' ? 'active' : 'inactive'
+                    status: data.motor.mcuEnable === 'Enabled' ? 'active' : 'inactive',
                   },
-                  { 
-                    id: 'MCU Drive Permit', 
-                    value: data.motor.mcuDrivePermit, 
+                  {
+                    id: 'MCU Drive Permit',
+                    value: data.motor.mcuDrivePermit,
                     icon: <CheckCircle className="w-5 h-5" />,
-                    status: data.motor.mcuDrivePermit === 'Permitted' ? 'active' : 'inactive'
+                    status: data.motor.mcuDrivePermit === 'Permitted' ? 'active' : 'inactive',
                   },
-                  { 
-                    id: 'MCU Off Permit', 
-                    value: data.motor.mcuOffPermit, 
+                  {
+                    id: 'MCU Off Permit',
+                    value: data.motor.mcuOffPermit,
                     icon: <AlertTriangle className="w-5 h-5" />,
-                    status: data.motor.mcuOffPermit === 'Permitted' ? 'active' : 'inactive'
+                    status: data.motor.mcuOffPermit === 'Permitted' ? 'active' : 'inactive',
                   },
                 ].map((param, index) => (
                   <div key={index} className="bg-black/40 rounded-2xl p-4 border border-green-500/20 hover:border-green-400/40 transition-all duration-300 backdrop-blur-sm group/item">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <div className={`p-2 rounded-xl ${
-                          param.status === 'active' ? 'bg-green-500/20 text-green-400' :
-                          param.status === 'idle' ? 'bg-yellow-500/20 text-yellow-400' :
-                          'bg-red-500/20 text-red-400'
-                        }`}>
+                        <div
+                          className={`p-2 rounded-xl ${
+                            param.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                            param.status === 'idle' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}
+                        >
                           {param.icon}
                         </div>
                         <span className="text-gray-300 font-medium">{param.id}</span>
                       </div>
                       <div className="flex items-center space-x-3">
-                        <span className={`font-bold px-3 py-1 rounded-full text-sm ${
-                          param.status === 'active' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-                          param.status === 'idle' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-                          'bg-red-500/20 text-red-400 border border-red-500/30'
-                        }`}>
+                        <span
+                          className={`font-bold px-3 py-1 rounded-full text-sm ${
+                            param.status === 'active' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                            param.status === 'idle' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                            'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}
+                        >
                           {param.value}
                         </span>
-                        <div className={`w-3 h-3 rounded-full animate-pulse ${
-                          param.status === 'active' ? 'bg-green-400' :
-                          param.status === 'idle' ? 'bg-yellow-400' :
-                          'bg-red-400'
-                        }`}></div>
+                        <div
+                          className={`w-3 h-3 rounded-full animate-pulse ${
+                            param.status === 'active' ? 'bg-green-400' :
+                            param.status === 'idle' ? 'bg-yellow-400' :
+                            'bg-red-400'
+                          }`}
+                        ></div>
                       </div>
                     </div>
                   </div>
@@ -600,12 +677,11 @@ function MotorPage({ user }) {
           </div>
         </div>
 
-        {/* Performance Trends */}
         <div className="relative group mb-8">
           <div className="absolute -inset-1 bg-gradient-to-r from-cyan-400 to-blue-600 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-500"></div>
           <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-cyan-500/30 shadow-2xl p-6 backdrop-blur-sm">
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 rounded-t-3xl"></div>
-            
+
             <h3 className="text-white font-bold text-2xl flex items-center mb-6">
               <div className="relative mr-3">
                 <TrendingUp className="w-8 h-8 text-cyan-400" />
@@ -628,7 +704,7 @@ function MotorPage({ user }) {
                         border: '1px solid #374151',
                         borderRadius: '12px',
                         color: '#fff',
-                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
                       }}
                     />
                     <Line type="monotone" dataKey="torque" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} />
@@ -654,12 +730,11 @@ function MotorPage({ user }) {
           </div>
         </div>
 
-        {/* System Configuration */}
         <div className="relative group">
           <div className="absolute -inset-1 bg-gradient-to-r from-indigo-400 to-purple-600 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-500"></div>
           <div className="relative bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-3xl border-2 border-indigo-500/30 shadow-2xl p-6 backdrop-blur-sm">
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-t-3xl"></div>
-            
+
             <h3 className="text-white font-bold text-2xl flex items-center mb-6">
               <div className="relative mr-3">
                 <Cpu className="w-8 h-8 text-indigo-400" />
@@ -670,47 +745,45 @@ function MotorPage({ user }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[
-                { 
-                  id: 'Number of Motors', 
+                {
+                  id: 'Number of Motors',
                   value: data.motor.motorQuantity,
                   icon: <Settings className="w-6 h-6" />,
                   description: 'Active motor units',
-                  color: 'from-blue-400 to-cyan-400'
+                  color: 'from-blue-400 to-cyan-400',
                 },
-                { 
-                  id: 'Motor Number', 
+                {
+                  id: 'Motor Number',
                   value: data.motor.motorNum,
                   icon: <Activity className="w-6 h-6" />,
                   description: 'Primary motor identifier',
-                  color: 'from-green-400 to-emerald-400'
+                  color: 'from-green-400 to-emerald-400',
                 },
-                { 
-                  id: 'MCU Manufacturer', 
+                {
+                  id: 'MCU Manufacturer',
                   value: data.motor.mcuManufacturer,
                   icon: <Cpu className="w-6 h-6" />,
                   description: 'Control unit provider',
-                  color: 'from-purple-400 to-pink-400'
+                  color: 'from-purple-400 to-pink-400',
                 },
               ].map((config, index) => (
                 <div key={index} className="relative group/config">
                   <div className="bg-black/40 rounded-2xl p-6 border border-indigo-500/20 hover:border-indigo-400/40 transition-all duration-300 backdrop-blur-sm hover:transform hover:scale-105">
                     <div className="flex items-start justify-between mb-4">
                       <div className={`p-3 rounded-xl bg-gradient-to-br ${config.color} bg-opacity-20`}>
-                        <div className={`bg-gradient-to-br ${config.color} bg-clip-text text-transparent`}>
-                          {config.icon}
-                        </div>
+                        <div className={`bg-gradient-to-br ${config.color} bg-clip-text text-transparent`}>{config.icon}</div>
                       </div>
                       <div className="text-right">
                         <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
                       </div>
                     </div>
-                    
+
                     <h4 className="text-indigo-400 font-semibold text-lg mb-2">{config.id}</h4>
                     <div className="text-white text-xl font-bold mb-2">{config.value}</div>
                     <div className="text-gray-400 text-sm">{config.description}</div>
-                    
+
                     <div className="mt-4 w-full bg-gray-700 rounded-full h-1">
-                      <div className={`h-full rounded-full bg-gradient-to-r ${config.color} animate-pulse`} style={{width: '85%'}}></div>
+                      <div className={`h-full rounded-full bg-gradient-to-r ${config.color} animate-pulse`} style={{ width: '85%' }}></div>
                     </div>
                   </div>
                 </div>
