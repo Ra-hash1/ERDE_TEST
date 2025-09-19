@@ -1,4 +1,3 @@
-// Dashboard.jsx
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Gauge, Battery, Settings, AlertCircle, Car } from "lucide-react";
@@ -44,18 +43,6 @@ function Dashboard({ user }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-black relative overflow-hidden">
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-full bg-gradient-to-b from-orange-400 to-transparent"></div>
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-2 h-full">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="w-2 h-16 bg-orange-400 mb-8"
-              style={{ marginTop: i === 0 ? "0" : "32px" }}
-            ></div>
-          ))}
-        </div>
-      </div>
       <div className="absolute inset-0 opacity-20">
         <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-gray-700 to-transparent"></div>
         <div className="absolute top-1/4 right-10 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>

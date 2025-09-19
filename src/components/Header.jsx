@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { User, CreditCard, HelpCircle, LifeBuoy, Car, Settings, Gauge, Power } from "lucide-react";
+import { User, CreditCard, HelpCircle, LifeBuoy, Settings, Gauge, Power } from "lucide-react";
+import intuteLogo from '../assets/Intute.png';
+import veloConnectLogo from '../assets/VeloConnectwb.png';
 
 function Header({ user, onLogout }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -29,7 +31,7 @@ function Header({ user, onLogout }) {
   return (
     <>
       <header className="bg-gradient-to-r from-gray-900 via-gray-800 to-black text-white shadow-2xl sticky top-0 z-20 border-b-2 border-orange-500/30">
-        <div className="container mx-auto flex items-center p-4">
+        <div className="container mx-auto flex items-center p-4 relative">
           {/* Menu Button */}
           <button
             onClick={toggleSidebar}
@@ -40,29 +42,12 @@ function Header({ user, onLogout }) {
             </svg>
           </button>
 
-          {/* Logo/Brand Section */}
-          <div className="flex items-center space-x-4 ml-6">
-            <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl shadow-lg">
-              <Car className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">
-                Vehicle Monitor
-              </h1>
-              <p className="text-gray-400 text-sm">Diagnostic System</p>
-            </div>
-          </div>
+          {/* Intute Logo */}
+          <img src={intuteLogo} alt="Intute Logo" className="h-20 opacity-95 ml-4" />
 
-          {/* Status Indicators */}
-          <div className="hidden md:flex items-center space-x-6 ml-8">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-gray-300 text-sm">System Online</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Gauge className="w-4 h-4 text-blue-400" />
-              <span className="text-gray-300 text-sm">Monitoring Active</span>
-            </div>
+          {/* VeloConnect Logo (Centered) */}
+          <div className="absolute left-1/2 transform -translate-x-1/2">
+            <img src={veloConnectLogo} alt="VeloConnect Logo" className="h-32 opacity-95" />
           </div>
 
           {/* User Section */}
@@ -93,9 +78,6 @@ function Header({ user, onLogout }) {
         {/* Sidebar Header */}
         <div className="flex items-center justify-between p-6 border-b border-orange-500/20">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center">
-              <Car className="w-6 h-6 text-white" />
-            </div>
             <div>
               <h2 className="text-lg font-bold text-white">Control Panel</h2>
               <p className="text-gray-400 text-xs">Vehicle Dashboard</p>

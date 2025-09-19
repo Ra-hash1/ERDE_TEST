@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Gauge, Lock, User, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, LogIn } from 'lucide-react';
 import axios from 'axios';
-import intuteLogo from '../assets/intuteAILogo.png';
+import intuteLogo from '../assets/Intute.png';
+import veloConnectLogo from '../assets/VeloConnectwb.png';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -59,26 +60,150 @@ function LoginModal({ setShowLogin, onSubmit }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-black relative overflow-hidden">
-      {/* Background Design Elements */}
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black relative overflow-hidden">
+      {/* Animated Grid Background */}
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-full bg-gradient-to-b from-orange-400 to-transparent"></div>
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-2 h-full">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="w-2 h-16 bg-orange-400 mb-8"
-              style={{ marginTop: i === 0 ? "0" : "32px" }}
-            ></div>
-          ))}
+        <div className="absolute inset-0" style={{
+          backgroundImage: `
+            linear-gradient(rgba(249, 115, 22, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(249, 115, 22, 0.1) 1px, transparent 1px)
+          `,
+          backgroundSize: '50px 50px',
+          animation: 'grid-move 20s linear infinite'
+        }}></div>
+      </div>
+
+      {/* Floating Geometric Shapes */}
+      <div className="absolute inset-0">
+        {/* Large Circle */}
+        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full border-2 border-orange-500/20 animate-spin-slow"></div>
+        <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full border border-orange-400/30 animate-spin-reverse"></div>
+        
+        {/* Bottom Left Shapes */}
+        <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full bg-gradient-to-tr from-orange-500/10 to-red-500/10 animate-pulse-slow"></div>
+        <div className="absolute bottom-32 left-16 w-6 h-6 rotate-45 bg-orange-500/30 animate-float"></div>
+        <div className="absolute bottom-48 left-8 w-4 h-4 rotate-45 bg-red-500/40 animate-float-delayed"></div>
+        
+        {/* Top Left Elements */}
+        <div className="absolute top-20 left-10 w-8 h-8 border-2 border-green-500/50 rotate-45 animate-rotate-slow"></div>
+        <div className="absolute top-40 left-32 w-3 h-3 bg-blue-500/60 rounded-full animate-pulse delay-1000"></div>
+        
+        {/* Right Side Elements */}
+        <div className="absolute top-1/3 right-16 w-12 h-1 bg-gradient-to-r from-orange-500/40 to-transparent animate-pulse"></div>
+        <div className="absolute top-1/2 right-8 w-6 h-6 border border-red-500/40 rotate-45 animate-spin-slow"></div>
+        
+        {/* Center Background Orbits */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-screen h-screen">
+          <div className="absolute inset-0 rounded-full border border-orange-500/5 animate-spin-very-slow" style={{width: '120%', height: '120%', top: '-10%', left: '-10%'}}></div>
+          <div className="absolute inset-0 rounded-full border border-red-500/5 animate-spin-reverse-slow" style={{width: '140%', height: '140%', top: '-20%', left: '-20%'}}></div>
         </div>
       </div>
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-gray-700 to-transparent"></div>
-        <div className="absolute top-1/4 right-10 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-        <div className="absolute top-1/3 left-10 w-3 h-3 bg-green-500 rounded-full animate-pulse delay-1000"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-2 h-2 bg-blue-500 rounded-full animate-pulse delay-2000"></div>
+
+      {/* Particle Effects */}
+      <div className="absolute inset-0">
+        {[...Array(15)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-orange-400/30 rounded-full animate-float"
+            style={{
+              top: `${Math.random() * 100}%`,
+              left: `${Math.random() * 100}%`,
+              animationDelay: `${Math.random() * 5}s`,
+              animationDuration: `${3 + Math.random() * 4}s`
+            }}
+          ></div>
+        ))}
       </div>
+
+      {/* Tech-inspired Corner Elements */}
+      <div className="absolute top-8 left-8 opacity-30">
+        <div className="flex flex-col space-y-2">
+          <div className="flex space-x-2">
+            <div className="w-8 h-1 bg-orange-500/50"></div>
+            <div className="w-4 h-1 bg-orange-400/40"></div>
+          </div>
+          <div className="flex space-x-2">
+            <div className="w-6 h-1 bg-red-500/40"></div>
+            <div className="w-3 h-1 bg-red-400/30"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div className="absolute bottom-8 right-8 opacity-30">
+        <div className="flex flex-col space-y-2 items-end">
+          <div className="flex space-x-2">
+            <div className="w-4 h-1 bg-orange-400/40"></div>
+            <div className="w-8 h-1 bg-orange-500/50"></div>
+          </div>
+          <div className="flex space-x-2">
+            <div className="w-3 h-1 bg-red-400/30"></div>
+            <div className="w-6 h-1 bg-red-500/40"></div>
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes grid-move {
+          0% { transform: translate(0, 0); }
+          100% { transform: translate(50px, 50px); }
+        }
+        @keyframes spin-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes spin-reverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+        @keyframes spin-very-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes spin-reverse-slow {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+        @keyframes rotate-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        @keyframes float-delayed {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-15px); }
+        }
+        @keyframes pulse-slow {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.6; }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 15s linear infinite;
+        }
+        .animate-spin-reverse {
+          animation: spin-reverse 20s linear infinite;
+        }
+        .animate-spin-very-slow {
+          animation: spin-very-slow 30s linear infinite;
+        }
+        .animate-spin-reverse-slow {
+          animation: spin-reverse-slow 25s linear infinite;
+        }
+        .animate-rotate-slow {
+          animation: rotate-slow 8s linear infinite;
+        }
+        .animate-float {
+          animation: float 3s ease-in-out infinite;
+        }
+        .animate-float-delayed {
+          animation: float-delayed 4s ease-in-out infinite;
+        }
+        .animate-pulse-slow {
+          animation: pulse-slow 4s ease-in-out infinite;
+        }
+      `}</style>
 
       {/* Main Content */}
       <div className="relative z-10 flex items-center justify-center min-h-screen p-6">
@@ -100,12 +225,9 @@ function LoginModal({ setShowLogin, onSubmit }) {
 
             <div className="p-8">
               {/* Header */}
-              <div className="text-center mb-8">
-                <div className="relative inline-flex items-center justify-center w-28 h-28 bg-gradient-to-br from-orange-500 via-red-500 to-red-700 rounded-full mb-6 shadow-2xl border-4 border-orange-400/30">
-                  <Gauge className="w-14 h-14 text-white" />
-                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full border-3 border-white shadow-lg">
-                    <div className="w-full h-full rounded-full bg-gradient-to-br from-green-400 to-emerald-500 animate-pulse"></div>
-                  </div>
+              <div className="text-center mb-6">
+                <div className="flex justify-center -mb-4">
+                  <img src={veloConnectLogo} alt="VeloConnect Logo" className="h-48 opacity-95" />
                 </div>
                 <div className="space-y-2 mb-4">
                   <h1 className="text-5xl font-black bg-gradient-to-r from-orange-400 via-red-400 to-orange-300 bg-clip-text text-transparent tracking-wider">
@@ -127,11 +249,11 @@ function LoginModal({ setShowLogin, onSubmit }) {
                 </div>
               </div>
 
-              {/* Logo */}
-              <div className="flex justify-center mb-8">
-                <div className="relative bg-black/40 rounded-2xl p-6 border border-orange-500/30 shadow-inner">
+              {/* Intute Logo */}
+              <div className="flex justify-center mb-6">
+                <div className="relative bg-black/40 rounded-2xl p-8 border border-orange-500/30 shadow-inner">
                   <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-transparent to-red-500/10 rounded-2xl"></div>
-                  <img src={intuteLogo} alt="Intute AI Logo" className="h-16 opacity-95 relative z-10" />
+                  <img src={intuteLogo} alt="Intute AI Logo" className="h-24 opacity-95 relative z-10" />
                   <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full animate-pulse shadow-lg"></div>
                 </div>
               </div>
