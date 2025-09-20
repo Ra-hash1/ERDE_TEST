@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Battery, Clock, Activity, Zap, TrendingUp, Cpu, ArrowLeft, BarChart3, CheckCircle, AlertTriangle } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
+import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -18,85 +19,104 @@ function VehicleData({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalData, setHistoricalData] = useState([]);
   const navigate = useNavigate();
-  const updateIntervalRef = useRef(null);
-
-  // Mock data generator
-  const generateMockVehicleData = (period) => {
-    const baseData = {
-      runningHrs: Number((Math.random() * (period === 'today' ? 24 : period === 'week' ? 168 : period === 'month' ? 720 : 10000)).toFixed(2)),
-      runningKms: Number((Math.random() * (period === 'today' ? 100 : period === 'week' ? 700 : period === 'month' ? 3000 : 50000)).toFixed(2)),
-      maxCurrent: Math.floor(Math.random() * 101) + 50, // 50-150 A
-      avgCurrent: Math.floor(Math.random() * 76) + 25, // 25-100 A
-      maxSpeed: Math.floor(Math.random() * 81) + 20, // 20-100 km/h
-      avgSpeed: Math.floor(Math.random() * 61) + 10, // 10-70 km/h
-      totalEnergy: Number((Math.random() * (period === 'today' ? 50 : period === 'week' ? 350 : period === 'month' ? 1500 : 25000)).toFixed(2)),
-      chargeCycles: Math.floor(Math.random() * (period === 'today' ? 2 : period === 'week' ? 14 : period === 'month' ? 60 : 1000)),
-      timestamp: Date.now(),
-    };
-    console.log(`Generated mock ${period} data:`, baseData);
-    return baseData;
-  };
-
-  // Mock fetch data
-  const fetchData = async (isInitial = false) => {
-    try {
-      if (isInitial) {
-        setLoading(true);
-      }
-
-      const periods = ['today', 'week', 'month', 'total'];
-      const newData = periods.reduce((acc, period) => {
-        acc[period] = generateMockVehicleData(period);
-        return acc;
-      }, { ...data });
-
-      console.log('Mock fetched data:', JSON.stringify(newData, null, 2));
-      setData(newData);
-
-      // Generate mock recent data
-      const recentData = Array.from({ length: 10 }, (_, index) => {
-        const motorSpeed = Math.floor(Math.random() * 4001); // 0-4000 RPM
-        const timeDelta = 5; // Simulate 5-second intervals
-        return {
-          time: new Date(Date.now() - (10 - index) * 5000).toLocaleTimeString(),
-          runningHrs: motorSpeed > 0 ? timeDelta / 3600 : 0,
-          runningKms: motorSpeed > 0 ? (motorSpeed * 0.001885) * (timeDelta / 3600) : 0,
-          avgSpeed: motorSpeed * 0.001885 * 60,
-          current: Math.floor(Math.random() * 76) + 25, // 25-100 A
-          packState: Math.floor(Math.random() * 101), // 0-100%
-        };
-      });
-
-      console.log('Mock historical data:', JSON.stringify(recentData, null, 2));
-      setHistoricalData(recentData);
-
-      if (isInitial) {
-        setIsInitialLoad(false);
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error(`Error generating mock data for ${selectedVehicle}: ${err.message}`);
-      setError(`Failed to generate mock vehicle data for ${selectedVehicle}: ${err.message}`);
-      if (isInitial) {
-        setLoading(false);
-      }
-    }
-  };
 
   useEffect(() => {
-    if (user?.token) {
-      fetchData(true);
-      updateIntervalRef.current = setInterval(() => fetchData(false), 10000);
-    } else {
-      setError('No authentication token provided');
-      setLoading(false);
-    }
+    let intervals = [];
 
-    return () => {
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
+    const fetchData = async (isInitial = false) => {
+      try {
+        if (isInitial) {
+          setLoading(true);
+        }
+
+        const periods = ['today', 'week', 'month', 'total'];
+        const fetchPromises = periods.map(async (period) => {
+          try {
+            const response = await axios.get(`${API_BASE_URL}/api/vehicle-historical`, {
+              params: { device_id: selectedVehicle, period },
+              headers: { Authorization: `Bearer ${user.token}` },
+            });
+            return { period, data: response.data };
+          } catch (err) {
+            console.warn(`Failed to fetch ${period} data for ${selectedVehicle}: ${err.message}`);
+            return { period, data: data[period] };
+          }
+        });
+
+        const results = await Promise.all(fetchPromises);
+        const newData = results.reduce((acc, { period, data }) => {
+          acc[period] = { ...data, timestamp: Date.now() };
+          return acc;
+        }, { ...data });
+
+        console.log('Fetched data:', JSON.stringify(newData, null, 2));
+        setData(newData);
+
+        let recentData = [];
+        try {
+          const recentResponse = await axios.get(`${API_BASE_URL}/api/vehicle-historical`, {
+            params: { device_id: selectedVehicle, period: 'recent' },
+            headers: { Authorization: `Bearer ${user.token}` },
+          });
+
+          recentData = Array.isArray(recentResponse.data)
+            ? recentResponse.data.slice(-10).map((item, index, arr) => {
+                const timeDelta = index > 0
+                  ? (new Date(item.timestamp) - new Date(arr[index - 1].timestamp)) / 1000
+                  : 5;
+                const motorSpeed = item.N_motorSpeed || 0;
+                return {
+                  time: new Date(item.timestamp || Date.now()).toLocaleTimeString(),
+                  runningHrs: motorSpeed > 0 ? timeDelta / 3600 : 0,
+                  runningKms: motorSpeed > 0 ? (motorSpeed * 0.001885) * (timeDelta / 3600) : 0,
+                  avgSpeed: motorSpeed * 0.001885 * 60,
+                  current: item.current || 0,
+                  packState: item.packState || 0,
+                };
+              })
+            : [{
+                time: new Date(newData.today.timestamp || Date.now()).toLocaleTimeString(),
+                runningHrs: newData.today.runningHrs || 0,
+                runningKms: newData.today.runningKms || 0,
+                avgSpeed: newData.today.avgSpeed || 0,
+                current: newData.today.avgCurrent || 0,
+                packState: 0,
+              }];
+
+        } catch (recentErr) {
+          console.warn(`Failed to fetch recent data for ${selectedVehicle}: ${recentErr.message}`);
+          recentData = [{
+            time: new Date(newData.today.timestamp || Date.now()).toLocaleTimeString(),
+            runningHrs: newData.today.runningHrs || 0,
+            runningKms: newData.today.runningKms || 0,
+            avgSpeed: newData.today.avgSpeed || 0,
+            current: newData.today.avgCurrent || 0,
+            packState: 0,
+          }];
+        }
+
+        console.log('Historical data:', JSON.stringify(recentData, null, 2));
+        setHistoricalData(recentData);
+
+        if (isInitial) {
+          setIsInitialLoad(false);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error(`Error fetching data for ${selectedVehicle}: ${err.message}`);
+        setError(`Failed to fetch vehicle data for ${selectedVehicle}: ${err.message}`);
+        if (isInitial) {
+          setLoading(false);
+        }
       }
     };
+
+    if (user?.token) {
+      fetchData(true);
+      intervals = [setInterval(() => fetchData(false), 10000)];
+    }
+
+    return () => intervals.forEach(clearInterval);
   }, [user?.token, selectedVehicle]);
 
   if (loading && isInitialLoad) {
