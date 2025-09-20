@@ -11,9 +11,9 @@ function BatteryPage({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalData, setHistoricalData] = useState([]);
   const navigate = useNavigate();
-  const wsRef = useRef(null); // Track WebSocket instance
-  const reconnectAttempts = useRef(0); // Track reconnection attempts
-  const maxReconnectAttempts = 5; // Limit reconnection attempts
+  const wsRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -57,7 +57,7 @@ function BatteryPage({ user }) {
 
       wsRef.current.onopen = () => {
         console.log(`WebSocket connected for ${selectedVehicle}`);
-        reconnectAttempts.current = 0; // Reset reconnect attempts on success
+        reconnectAttempts.current = 0;
       };
 
       wsRef.current.onmessage = (event) => {
@@ -83,7 +83,7 @@ function BatteryPage({ user }) {
                 avgTemp: parseFloat(battery.avgTemp) || 0,
               },
             ];
-            return newData.slice(-10); // Keep last 10 points
+            return newData.slice(-10);
           });
 
           if (isInitialLoad) {
@@ -107,7 +107,7 @@ function BatteryPage({ user }) {
       wsRef.current.onclose = () => {
         console.log(`WebSocket closed for ${selectedVehicle}.`);
         if (reconnectAttempts.current < maxReconnectAttempts) {
-          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000); // Exponential backoff, max 30s
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
           console.log(`Reconnecting in ${delay}ms... Attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts}`);
           setTimeout(() => {
             reconnectAttempts.current += 1;
@@ -180,9 +180,9 @@ function BatteryPage({ user }) {
   ];
 
   const voltageData = [
-    { name: 'Max', value: parseFloat(data.battery.maxVoltage) || 0, fill: '#f59e0b' },
-    { name: 'Avg', value: parseFloat(data.battery.avgVoltage) || 0, fill: '#3b82f6' },
-    { name: 'Min', value: parseFloat(data.battery.minVoltage) || 0, fill: '#ef4444' },
+    { name: 'Max', value: parseFloat(data.battery.maxVoltage) || 595.187, fill: '#f59e0b' },
+    { name: 'Avg', value: parseFloat(data.battery.avgVoltage) || 595.187, fill: '#3b82f6' },
+    { name: 'Min', value: parseFloat(data.battery.minVoltage) || 595.187, fill: '#ef4444' },
   ];
 
   const tempData = [
@@ -224,19 +224,10 @@ function BatteryPage({ user }) {
   };
 
   const socPercentage = parseFloat(data.battery.soc).toFixed(1);
-  const voltagePercentage = ((parseFloat(data.battery.stackVoltage) / 600) * 100).toFixed(1); // Adjusted for typical EV stack voltage (~600V)
+  const voltagePercentage = ((parseFloat(data.battery.stackVoltage) / 800) * 100).toFixed(1);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-black relative overflow-hidden">
-      {/* Enhanced Background Effects */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-full">
-          <div className="w-full h-full bg-gradient-to-b from-orange-400 via-red-400 to-purple-500 animate-pulse"></div>
-        </div>
-        <div className="absolute top-0 right-1/4 w-24 h-full bg-gradient-to-b from-blue-400 to-transparent opacity-50"></div>
-        <div className="absolute top-0 left-1/4 w-16 h-full bg-gradient-to-b from-green-400 to-transparent opacity-30"></div>
-      </div>
-
       {/* Floating Particles */}
       <div className="absolute inset-0 opacity-20">
         {[...Array(12)].map((_, i) => (
@@ -300,18 +291,6 @@ function BatteryPage({ user }) {
                   LIVE • {new Date(data.battery.timestamp || Date.now()).toLocaleTimeString()}
                 </span>
               </div>
-            </div>
-            <div className={`flex items-center space-x-3 bg-black/30 backdrop-blur-sm rounded-xl px-4 py-2 border transition-all duration-300 ${
-              data.battery.batteryStatus === 'Active' ? 'border-green-500/30' : 
-              data.battery.batteryStatus === 'Warning' ? 'border-yellow-500/30' : 'border-red-500/30'
-            }`}>
-              <div className="relative">
-                {getStatusIcon(data.battery.batteryStatus)}
-                <div className={`absolute inset-0 rounded-full animate-ping ${getStatusColor(data.battery.batteryStatus).replace('text-', 'bg-')}`}></div>
-              </div>
-              <span className={`font-bold text-xl ${getStatusColor(data.battery.batteryStatus)}`}>
-                SYSTEM {data.battery.batteryStatus?.toUpperCase()}
-              </span>
             </div>
           </div>
         </div>
@@ -402,7 +381,7 @@ function BatteryPage({ user }) {
                   <BarChart data={voltageData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                     <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                    <YAxis stroke="#9ca3af" fontSize={12} />
+                    <YAxis stroke="#9ca3af" fontSize={12} domain={[0, 800]} tickFormatter={(value) => value.toFixed(1)} />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: '#111827',
@@ -410,6 +389,7 @@ function BatteryPage({ user }) {
                         borderRadius: '12px',
                         color: '#fff',
                       }}
+                      formatter={(value) => `${value.toFixed(3)} V`}
                     />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                       {voltageData.map((entry, index) => (
@@ -421,7 +401,7 @@ function BatteryPage({ user }) {
               </div>
 
               <div className="text-center">
-                <div className="text-2xl font-bold text-white">{data.battery.stackVoltage} V</div>
+                <div className="text-2xl font-bold text-white">{parseFloat(data.battery.stackVoltage).toFixed(3)} V</div>
                 <div className="text-blue-400 text-sm">Stack Voltage</div>
               </div>
             </div>
@@ -516,7 +496,7 @@ function BatteryPage({ user }) {
                       <div 
                         className="h-full rounded-full transition-all duration-1000 ease-out relative"
                         style={{
-                          width: `${(item.value / (item.unit === 'V' ? 600 : 20)) * 100}%`, // Adjusted for typical EV charger voltage
+                          width: `${(item.value / (item.unit === 'V' ? 800 : 20)) * 100}%`,
                           backgroundColor: item.color
                         }}
                       >
@@ -588,7 +568,7 @@ function BatteryPage({ user }) {
                   <LineChart data={historicalData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                     <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
-                    <YAxis stroke="#9ca3af" fontSize={12} />
+                    <YAxis stroke="#9ca3af" fontSize={12} domain={[0, 800]} tickFormatter={(value) => value.toFixed(1)} />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: '#111827',
@@ -597,6 +577,7 @@ function BatteryPage({ user }) {
                         color: '#fff',
                         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
                       }}
+                      formatter={(value, name) => name === 'stackVoltage' ? `${value.toFixed(3)} V` : value}
                     />
                     <Line type="monotone" dataKey="soc" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} />
                     <Line type="monotone" dataKey="stackVoltage" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6', r: 4 }} />
@@ -609,7 +590,7 @@ function BatteryPage({ user }) {
             <div className="grid grid-cols-3 gap-4">
               {[
                 { label: 'SOC', value: `${data.battery.soc}%`, color: 'text-green-400', bg: 'bg-green-500/20' },
-                { label: 'Stack Voltage', value: `${data.battery.stackVoltage} V`, color: 'text-blue-400', bg: 'bg-blue-500/20' },
+                { label: 'Stack Voltage', value: `${parseFloat(data.battery.stackVoltage).toFixed(3)} V`, color: 'text-blue-400', bg: 'bg-blue-500/20' },
                 { label: 'Temperature', value: `${data.battery.avgTemp}°C`, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
               ].map((metric, index) => (
                 <div key={index} className={`${metric.bg} rounded-xl p-3 border border-gray-600/30`}>
