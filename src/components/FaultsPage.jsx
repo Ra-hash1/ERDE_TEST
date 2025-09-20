@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, CheckCircle, AlertTriangle, Zap, Activity } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
@@ -12,6 +12,11 @@ function FaultsPage({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalFaults, setHistoricalFaults] = useState([]);
   const navigate = useNavigate();
+  const wsRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   const faultParameters = [
     'Hardware driver failure',
@@ -37,105 +42,218 @@ function FaultsPage({ user }) {
     'Encoder failure'
   ];
 
-  // Mock data for testing
-  const mockData = {
-    faults: {
-      faultCode: "F101",
-      faultDescription: "Hardware overcurrent fault",
-      faultSeverity: "Critical",
-      faultTimestamp: Date.now(),
-      faultStatus: "Active",
-    },
-    config: {
-      canMappings: {
-        faults: {
-          faultCode: "x401",
-          faultDescription: "x402",
-          faultSeverity: "x403",
-          faultTimestamp: "x404",
-          faultStatus: "x405",
+  const fetchConfig = async () => {
+    try {
+      console.log('Fetching config with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/config?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
         },
-      },
-    },
+      });
+      console.log('Config response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch config: ${response.status} ${response.statusText}`);
+      const configData = await response.json();
+      console.log('Config received:', configData);
+      return configData;
+    } catch (err) {
+      console.error(`Config fetch error: ${err.message}`);
+      return {
+        canMappings: {
+          faults: {
+            faultCode: 'x401',
+            faultDescription: 'x402',
+            faultSeverity: 'x403',
+            faultTimestamp: 'x404',
+            faultStatus: 'x405',
+          },
+        },
+      };
+    }
   };
 
-  const mockAllFaults = {
-    "Hardware driver failure": "Inactive",
-    "Hardware overcurrent fault": "Active",
-    "Zero offset fault": "Inactive",
-    "Fan failure": "Inactive",
-    "Temperature difference failure": "Inactive",
-    "AC Hall failure": "Inactive",
-    "Stall failure": "Inactive",
-    "Low voltage undervoltage fault": "Inactive",
-    "Software overcurrent fault": "Inactive",
-    "Hardware overvoltage fault": "Inactive",
-    "Total hardware failure": "Inactive",
-    "Bus overvoltage fault": "Inactive",
-    "Busbar undervoltage fault": "Inactive",
-    "Module over temperature fault": "Inactive",
-    "Module over temperature warning": "Inactive",
-    "Overspeed fault": "Inactive",
-    "OverRpmAlarm_Flag": "Inactive",
-    "Motor over temperature warning": "Inactive",
-    "Motor over temperature fault": "Inactive",
-    "CAN offline failure": "Inactive",
-    "Encoder failure": "Inactive",
+  const fetchFaults = async () => {
+    try {
+      console.log('Fetching faults with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/faults?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      console.log('Faults response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch faults: ${response.status} ${response.statusText}`);
+      const faultsData = await response.json();
+      console.log('Faults received:', faultsData);
+
+      let latestFault;
+      if (Array.isArray(faultsData)) {
+        if (faultsData.length === 0) {
+          throw new Error('Faults data array is empty');
+        }
+        latestFault = faultsData.reduce((latest, current) => {
+          return (!latest.faultTimestamp || (current.faultTimestamp && current.faultTimestamp > latest.faultTimestamp)) ? current : latest;
+        }, faultsData[0]);
+      } else {
+        latestFault = faultsData;
+      }
+      latestFault = { ...latestFault, faultTimestamp: latestFault.faultTimestamp || Date.now() };
+
+      // Update allFaults state with known faults, defaulting others to Inactive
+      const updatedFaults = faultParameters.reduce((acc, fault) => {
+        acc[fault] = (latestFault.faultDescription === fault && latestFault.faultStatus === 'Active') ? 'Active' : 'Inactive';
+        return acc;
+      }, {});
+      setAllFaults(updatedFaults);
+
+      return latestFault;
+    } catch (err) {
+      console.error(`Faults fetch error: ${err.message}`);
+      const defaultFaults = faultParameters.reduce((acc, fault) => {
+        acc[fault] = 'Inactive';
+        return acc;
+      }, {});
+      setAllFaults(defaultFaults);
+      return {
+        faultCode: 'F000',
+        faultDescription: 'No active faults',
+        faultSeverity: 'Normal',
+        faultTimestamp: Date.now(),
+        faultStatus: 'Inactive',
+      };
+    }
   };
 
-  const mockHistoricalFaults = [
-    {
-      time: new Date(Date.now() - 9 * 60 * 1000).toLocaleTimeString(),
-      severity: 1,
-    },
-    {
-      time: new Date(Date.now() - 8 * 60 * 1000).toLocaleTimeString(),
-      severity: 1,
-    },
-    {
-      time: new Date(Date.now() - 7 * 60 * 1000).toLocaleTimeString(),
-      severity: 2,
-    },
-    {
-      time: new Date(Date.now() - 6 * 60 * 1000).toLocaleTimeString(),
-      severity: 2,
-    },
-    {
-      time: new Date(Date.now() - 5 * 60 * 1000).toLocaleTimeString(),
-      severity: 1,
-    },
-    {
-      time: new Date(Date.now() - 4 * 60 * 1000).toLocaleTimeString(),
-      severity: 1,
-    },
-    {
-      time: new Date(Date.now() - 3 * 60 * 1000).toLocaleTimeString(),
-      severity: 2,
-    },
-    {
-      time: new Date(Date.now() - 2 * 60 * 1000).toLocaleTimeString(),
-      severity: 2,
-    },
-    {
-      time: new Date(Date.now() - 1 * 60 * 1000).toLocaleTimeString(),
-      severity: 3,
-    },
-    {
-      time: new Date(Date.now()).toLocaleTimeString(),
-      severity: 3,
-    },
-  ];
+  const connectWebSocket = async () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log(`WebSocket already connected for ${selectedVehicle}`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const configData = await fetchConfig();
+      const initialFaultsData = await fetchFaults();
+      setData({ faults: initialFaultsData, config: configData });
+
+      setHistoricalFaults(prev => {
+        const newData = [
+          ...prev,
+          {
+            time: new Date(initialFaultsData.faultTimestamp || Date.now()).toLocaleTimeString(),
+            severity: initialFaultsData.faultSeverity === 'Critical' ? 3 : initialFaultsData.faultSeverity === 'Warning' ? 2 : 1,
+          },
+        ];
+        return newData.slice(-10);
+      });
+
+      const wsUrl = `ws://localhost:5000?device_id=${selectedVehicle}&token=${user?.token}`;
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        console.log(`WebSocket connected for ${selectedVehicle}`);
+        reconnectAttempts.current = 0;
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('WebSocket message received:', message);
+          const { faults } = message;
+          if (faults) {
+            const latestFault = Array.isArray(faults)
+              ? faults.reduce((latest, current) => {
+                  return (!latest.faultTimestamp || (current.faultTimestamp && current.faultTimestamp > latest.faultTimestamp)) ? current : latest;
+                }, faults[0]) || faults[0]
+              : faults;
+
+            setData(prevData => ({
+              faults: {
+                ...latestFault,
+                faultTimestamp: latestFault.faultTimestamp || Date.now(),
+              },
+              config: prevData.config,
+            }));
+
+            // Update allFaults based on WebSocket data
+            setAllFaults(prev => {
+              const updatedFaults = { ...prev };
+              faultParameters.forEach(fault => {
+                updatedFaults[fault] = (latestFault.faultDescription === fault && latestFault.faultStatus === 'Active') ? 'Active' : 'Inactive';
+              });
+              return updatedFaults;
+            });
+
+            setHistoricalFaults(prev => {
+              const newData = [
+                ...prev,
+                {
+                  time: new Date(latestFault.faultTimestamp || Date.now()).toLocaleTimeString(),
+                  severity: latestFault.faultSeverity === 'Critical' ? 3 : latestFault.faultSeverity === 'Warning' ? 2 : 1,
+                },
+              ];
+              return newData.slice(-10);
+            });
+
+            if (isInitialLoad) {
+              setIsInitialLoad(false);
+              setLoading(false);
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to parse WebSocket data: ${err.message}`);
+          setError(`Failed to parse WebSocket data: ${err.message}`);
+          if (isInitialLoad) {
+            setLoading(false);
+          }
+        }
+      };
+
+      wsRef.current.onerror = (err) => {
+        console.error(`WebSocket error for ${selectedVehicle}:`, err);
+        setError(`WebSocket error: ${err.message || 'Connection failed'}`);
+        setLoading(false);
+      };
+
+      wsRef.current.onclose = () => {
+        console.log(`WebSocket closed for ${selectedVehicle}.`);
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
+          console.log(`Reconnecting in ${delay}ms... Attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts}`);
+          setTimeout(() => {
+            reconnectAttempts.current += 1;
+            connectWebSocket();
+          }, delay);
+        } else {
+          setError('Max WebSocket reconnection attempts reached');
+          setLoading(false);
+        }
+      };
+    } catch (err) {
+      console.error(`WebSocket connection error: ${err.message}`);
+      setError(err.message);
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Simulate initial data load with mock data
-    setTimeout(() => {
-      setData(mockData);
-      setAllFaults(mockAllFaults);
-      setHistoricalFaults(mockHistoricalFaults);
+    if (user?.token) {
+      console.log('useEffect triggered with token:', user?.token, 'vehicle:', selectedVehicle);
+      connectWebSocket();
+    } else {
+      setError('No authentication token provided');
       setLoading(false);
-      setIsInitialLoad(false);
-    }, 1000); // Simulate network delay
-  }, []);
+      setAllFaults(faultParameters.reduce((acc, fault) => {
+        acc[fault] = 'Inactive';
+        return acc;
+      }, {}));
+    }
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [user?.token, selectedVehicle]);
 
   if (loading && isInitialLoad) {
     return (

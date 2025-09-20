@@ -11,87 +11,117 @@ function MotorPage({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalData, setHistoricalData] = useState([]);
   const navigate = useNavigate();
-  const wsRef = useRef(null); // Not used in mock mode
-  const intervalRef = useRef(null); // For simulating real-time updates
+  const wsRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-  // Mock config data (simulates API response)
-  const mockConfig = {
-    canMappings: {
-      motor: {
-        torqueLimit: 'x301',
-        torqueValue: 'x302',
-        motorSpeed: 'x303',
-        rotationDirection: 'x304',
-        operationMode: 'x305',
-        mcuEnable: 'x306',
-        mcuDrivePermit: 'x307',
-        mcuOffPermit: 'x308',
-        totalFaultStatus: 'x309',
-        acCurrent: 'x310',
-        acVoltage: 'x311',
-        dcVoltage: 'x312',
-        motorTemp: 'x313',
-        mcuTemp: 'x314',
-        radiatorTemp: 'x315',
-        motorQuantity: 'x316',
-        motorNum: 'x317',
-        mcuManufacturer: 'x318',
-      },
-    },
-  };
-
-  // Function to generate mock motor data (can be randomized for testing)
-  const generateMockMotorData = (baseData = {}) => {
-    const timestamp = Date.now();
-    return {
-      torqueLimit: baseData.torqueLimit || 200 + Math.floor(Math.random() * 50), // Vary slightly
-      torqueValue: baseData.torqueValue || 150 + Math.floor(Math.random() * 30),
-      motorSpeed: baseData.motorSpeed || 3000 + Math.floor(Math.random() * 500),
-      rotationDirection: baseData.rotationDirection || (Math.random() > 0.5 ? 'Forward' : 'Reverse'),
-      operationMode: baseData.operationMode || 'Drive',
-      mcuEnable: baseData.mcuEnable || 'Enabled',
-      mcuDrivePermit: baseData.mcuDrivePermit || 'Permitted',
-      mcuOffPermit: baseData.mcuOffPermit || 'Permitted',
-      totalFaultStatus: baseData.totalFaultStatus || (Math.random() > 0.8 ? 'Warning' : 'Normal'), // Occasional warning for testing
-      acCurrent: baseData.acCurrent || 100 + Math.floor(Math.random() * 20),
-      acVoltage: baseData.acVoltage || 400 + Math.floor(Math.random() * 50),
-      dcVoltage: baseData.dcVoltage || 48 + Math.floor(Math.random() * 5),
-      motorTemp: baseData.motorTemp || 60 + Math.floor(Math.random() * 10),
-      mcuTemp: baseData.mcuTemp || 50 + Math.floor(Math.random() * 8),
-      radiatorTemp: baseData.radiatorTemp || 45 + Math.floor(Math.random() * 5),
-      motorQuantity: selectedVehicle === 'VCL001' ? 2 : 1,
-      motorNum: selectedVehicle === 'VCL001' ? 'Motor 1' : 'Motor A',
-      mcuManufacturer: selectedVehicle === 'VCL001' ? 'CETL Corp' : 'MotorTech Inc',
-      timestamp,
-    };
-  };
-
-  // Mock fetchConfig (no real API call)
   const fetchConfig = async () => {
-    console.log('Using mock config');
-    return mockConfig;
+    try {
+      console.log('Fetching config with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/config?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      console.log('Config response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch config: ${response.status} ${response.statusText}`);
+      const configData = await response.json();
+      console.log('Config received:', configData);
+      return configData;
+    } catch (err) {
+      console.error(`Config fetch error: ${err.message}`);
+      return {
+        canMappings: {
+          motor: {
+            torqueLimit: 'x301',
+            torqueValue: 'x302',
+            motorSpeed: 'x303',
+            rotationDirection: 'x304',
+            operationMode: 'x305',
+            mcuEnable: 'x306',
+            mcuDrivePermit: 'x307',
+            mcuOffPermit: 'x308',
+            totalFaultStatus: 'x309',
+            acCurrent: 'x310',
+            acVoltage: 'x311',
+            dcVoltage: 'x312',
+            motorTemp: 'x313',
+            mcuTemp: 'x314',
+            radiatorTemp: 'x315',
+            motorQuantity: 'x316',
+            motorNum: 'x317',
+            mcuManufacturer: 'x318',
+          },
+        },
+      };
+    }
   };
 
-  // Mock fetchMotorData (no real API call, returns generated data)
   const fetchMotorData = async () => {
-    console.log('Using mock motor data');
-    return generateMockMotorData();
+    try {
+      console.log('Fetching motor data with token:', user?.token);
+      const response = await fetch(`${API_BASE_URL}/api/motor?device_id=${selectedVehicle}`, {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      console.log('Motor response status:', response.status, response.statusText);
+      if (!response.ok) throw new Error(`Failed to fetch motor data: ${response.status} ${response.statusText}`);
+      const motorData = await response.json();
+      console.log('Motor data received:', motorData);
+     
+      if (Array.isArray(motorData)) {
+        if (motorData.length === 0) {
+          throw new Error('Motor data array is empty');
+        }
+        const latestMotorData = motorData.reduce((latest, current) => {
+          return (!latest.timestamp || (current.timestamp && current.timestamp > latest.timestamp)) ? current : latest;
+        }, motorData[0]);
+        return { ...latestMotorData, timestamp: latestMotorData.timestamp || Date.now() };
+      }
+      return { ...motorData, timestamp: motorData.timestamp || Date.now() };
+    } catch (err) {
+      console.error(`Motor fetch error: ${err.message}`);
+      return {
+        torqueLimit: 200,
+        torqueValue: 150,
+        motorSpeed: 3000,
+        rotationDirection: 'Forward',
+        operationMode: 'Drive',
+        mcuEnable: 'Enabled',
+        mcuDrivePermit: 'Permitted',
+        mcuOffPermit: 'Permitted',
+        totalFaultStatus: 'Normal',
+        acCurrent: 100,
+        acVoltage: 400,
+        dcVoltage: 48,
+        motorTemp: 60,
+        mcuTemp: 50,
+        radiatorTemp: 45,
+        motorQuantity: selectedVehicle === 'VCL001' ? 2 : 1,
+        motorNum: selectedVehicle === 'VCL001' ? 'Motor 1' : 'Motor A',
+        mcuManufacturer: selectedVehicle === 'VCL001' ? 'CETL Corp' : 'MotorTech Inc',
+        timestamp: Date.now(),
+      };
+    }
   };
 
-  // Simulate WebSocket with interval-based updates instead of real WS
   const connectWebSocket = async () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log(`WebSocket already connected for ${selectedVehicle}`);
+      return;
+    }
     try {
       setLoading(true);
       const configData = await fetchConfig();
-      let initialMotorData = await fetchMotorData();
+      const initialMotorData = await fetchMotorData();
       setData({ motor: initialMotorData, config: configData });
-      
-      // Initialize historical data
       setHistoricalData(prev => {
         const newData = [
           ...prev,
           {
-            time: new Date(initialMotorData.timestamp).toLocaleTimeString(),
+            time: new Date(initialMotorData.timestamp || Date.now()).toLocaleTimeString(),
             torque: parseFloat(initialMotorData.torqueValue) || 0,
             speed: parseFloat(initialMotorData.motorSpeed) || 0,
             temp: parseFloat(initialMotorData.motorTemp) || 0,
@@ -99,48 +129,76 @@ function MotorPage({ user }) {
         ];
         return newData.slice(-10);
       });
-
-      // Simulate real-time updates every 2 seconds
-      intervalRef.current = setInterval(() => {
-        const updatedMotorData = generateMockMotorData(initialMotorData); // Base on previous for continuity
-        const { motor: latestMotor } = { motor: updatedMotorData }; // Simulate message structure
-        
-        setData(prevData => ({
-          motor: {
-            ...latestMotor,
-            timestamp: latestMotor.timestamp,
-          },
-          config: prevData.config,
-        }));
-        
-        setHistoricalData(prev => {
-          const newData = [
-            ...prev,
-            {
-              time: new Date(latestMotor.timestamp).toLocaleTimeString(),
-              torque: parseFloat(latestMotor.torqueValue) || 0,
-              speed: parseFloat(latestMotor.motorSpeed) || 0,
-              temp: parseFloat(latestMotor.motorTemp) || 0,
-            },
-          ];
-          return newData.slice(-10);
-        });
-        
-        initialMotorData = updatedMotorData; // Update base for next iteration
-        
-        if (isInitialLoad) {
-          setIsInitialLoad(false);
+      const wsUrl = `ws://localhost:5000?device_id=${selectedVehicle}&token=${user?.token}`;
+      wsRef.current = new WebSocket(wsUrl);
+      wsRef.current.onopen = () => {
+        console.log(`WebSocket connected for ${selectedVehicle}`);
+        reconnectAttempts.current = 0;
+      };
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('WebSocket message received:', message);
+          const { motor } = message;
+          if (motor) {
+            const latestMotor = Array.isArray(motor)
+              ? motor.reduce((latest, current) => {
+                  return (!latest.timestamp || (current.timestamp && current.timestamp > latest.timestamp)) ? current : latest;
+                }, motor[0]) || motor[0]
+              : motor;
+            setData(prevData => ({
+              motor: {
+                ...latestMotor,
+                timestamp: latestMotor.timestamp || Date.now(),
+              },
+              config: prevData.config,
+            }));
+            setHistoricalData(prev => {
+              const newData = [
+                ...prev,
+                {
+                  time: new Date(latestMotor.timestamp || Date.now()).toLocaleTimeString(),
+                  torque: parseFloat(latestMotor.torqueValue) || 0,
+                  speed: parseFloat(latestMotor.motorSpeed) || 0,
+                  temp: parseFloat(latestMotor.motorTemp) || 0,
+                },
+              ];
+              return newData.slice(-10);
+            });
+            if (isInitialLoad) {
+              setIsInitialLoad(false);
+              setLoading(false);
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to parse WebSocket data: ${err.message}`);
+          setError(`Failed to parse WebSocket data: ${err.message}`);
+          if (isInitialLoad) {
+            setLoading(false);
+          }
+        }
+      };
+      wsRef.current.onerror = (err) => {
+        console.error(`WebSocket error for ${selectedVehicle}:`, err);
+        setError(`WebSocket error: ${err.message || 'Connection failed'}`);
+        setLoading(false);
+      };
+      wsRef.current.onclose = () => {
+        console.log(`WebSocket closed for ${selectedVehicle}.`);
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
+          console.log(`Reconnecting in ${delay}ms... Attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts}`);
+          setTimeout(() => {
+            reconnectAttempts.current += 1;
+            connectWebSocket();
+          }, delay);
+        } else {
+          setError('Max WebSocket reconnection attempts reached');
           setLoading(false);
         }
-      }, 2000); // Update every 2 seconds for testing
-
-      console.log('Mock WebSocket simulation started');
-      if (isInitialLoad) {
-        setIsInitialLoad(false);
-        setLoading(false);
-      }
+      };
     } catch (err) {
-      console.error(`Mock connection error: ${err.message}`);
+      console.error(`WebSocket connection error: ${err.message}`);
       setError(err.message);
       setLoading(false);
     }
@@ -154,14 +212,13 @@ function MotorPage({ user }) {
       setLoading(false);
     }
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, [user?.token, selectedVehicle]);
 
-  // Rest of the component remains unchanged...
   if (loading && isInitialLoad) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-black flex items-center justify-center">
