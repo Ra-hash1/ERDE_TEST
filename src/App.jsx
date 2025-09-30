@@ -8,6 +8,7 @@ import BatteryPage from './components/BatteryPage';
 import MotorPage from './components/MotorPage';
 import FaultsPage from './components/FaultsPage';
 import VehicleData from './components/VehicleData';
+import DailyReportPage from './components/DailyReportPage';
 import axios from 'axios';
 
 function App() {
@@ -155,6 +156,19 @@ function App() {
               </>
             ) : (
               <LoginModal setShowLogin={setShowLogin} onSubmit={handleLogin} />
+            )
+          }
+        />
+        <Route
+          path='/daily-reports'
+          element={
+            user && localStorage.getItem('selectedVehicle') ? (
+              <>
+                <Header user={user} onLogout={handleLogout} />
+                <DailyReportPage user={user} />
+              </>
+            ) : (
+              <Navigate to='/vehicle-select' replace />
             )
           }
         />

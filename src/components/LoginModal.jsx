@@ -6,6 +6,12 @@ import veloConnectLogo from '../assets/VeloConnectwb.png';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+// Mock credentials
+const MOCK_CREDENTIALS = {
+  email: 'admin@intuteai.in',
+  password: 'password123',
+};
+
 function LoginModal({ setShowLogin, onSubmit }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,6 +35,18 @@ function LoginModal({ setShowLogin, onSubmit }) {
     setLoading(true);
     setError('');
 
+    // Mock login for testing
+    if (email === MOCK_CREDENTIALS.email && password === MOCK_CREDENTIALS.password) {
+      console.log('Mock login successful for:', { email });
+      setTimeout(() => {
+        onSubmit('admin', 'Admin User', 'mock-jwt-token-12345', email);
+        setShowLogin(false);
+        setLoading(false);
+      }, 1000); // Simulate network delay
+      return;
+    }
+
+    // Actual API call for non-mock login
     try {
       console.log('Sending login request with:', { email, password });
       const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {

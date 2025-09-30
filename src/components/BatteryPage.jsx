@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Thermometer, Battery, Zap, Activity, TrendingUp, AlertTriangle, CheckCircle, BarChart3, Bolt, ArrowLeft, Cpu } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
@@ -11,134 +11,120 @@ function BatteryPage({ user }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [historicalData, setHistoricalData] = useState([]);
   const navigate = useNavigate();
-  const wsRef = useRef(null);
-  const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-  const fetchConfig = async () => {
-    try {
-      console.log('Fetching config with token:', user?.token);
-      const response = await fetch(`${API_BASE_URL}/api/config?device_id=${selectedVehicle}`, {
-        headers: {
-          Authorization: `Bearer ${user?.token}`,
-        },
-      });
-      console.log('Config response status:', response.status, response.statusText);
-      if (!response.ok) throw new Error(`Failed to fetch config: ${response.status} ${response.statusText}`);
-      const config = await response.json();
-      console.log('Config received:', config);
-      return config;
-    } catch (err) {
-      console.error(`Config fetch error: ${err.message}`);
-      return {
-        canMappings: {
-          battery: {
-            moduleTemps: {},
-            cellVoltages: {},
+  // Mock data for testing
+  const mockData = {
+    battery: {
+      soc: "75.5",
+      stackVoltage: "650.123",
+      maxVoltage: "4.2",
+      avgVoltage: "4.0",
+      minVoltage: "3.8",
+      maxTemp: "35.0",
+      avgTemp: "32.5",
+      minTemp: "30.0",
+      current: "10.5",
+      chargerCurrentDemand: "8.0",
+      chargerVoltageDemand: "600.0",
+      timestamp: Date.now(),
+      status: "active",
+      module1Temps: "32.0, 31.5, 32.2",
+      module1CellsAvg: "4.01",
+      module2Temps: "33.0, 32.8, 33.2",
+      module2CellsAvg: "4.02",
+      module3Temps: "31.0, 30.8, 31.2",
+      module3CellsAvg: "3.99",
+    },
+    config: {
+      canMappings: {
+        battery: {
+          moduleTemps: {
+            module1: true,
+            module2: true,
+            module3: true,
+          },
+          cellVoltages: {
+            module1: true,
+            module2: true,
+            module3: true,
           },
         },
-      };
-    }
+      },
+    },
   };
 
-  const connectWebSocket = async () => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log(`WebSocket already connected for ${selectedVehicle}`);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const config = await fetchConfig();
-      const wsUrl = `ws://localhost:5000?device_id=${selectedVehicle}&token=${user?.token}`;
-      wsRef.current = new WebSocket(wsUrl);
-
-      wsRef.current.onopen = () => {
-        console.log(`WebSocket connected for ${selectedVehicle}`);
-        reconnectAttempts.current = 0;
-      };
-
-      wsRef.current.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          const { battery, timestamp } = message;
-
-          setData(prevData => ({
-            battery: {
-              ...battery,
-              timestamp: timestamp || Date.now(),
-            },
-            config,
-          }));
-
-          setHistoricalData(prev => {
-            const newData = [
-              ...prev,
-              {
-                time: new Date(timestamp || Date.now()).toLocaleTimeString(),
-                soc: parseFloat(battery.soc) || 0,
-                stackVoltage: parseFloat(battery.stackVoltage) || 0,
-                avgTemp: parseFloat(battery.avgTemp) || 0,
-              },
-            ];
-            return newData.slice(-10);
-          });
-
-          if (isInitialLoad) {
-            setIsInitialLoad(false);
-            setLoading(false);
-          }
-        } catch (err) {
-          setError(`Failed to parse WebSocket data: ${err.message}`);
-          if (isInitialLoad) {
-            setLoading(false);
-          }
-        }
-      };
-
-      wsRef.current.onerror = (err) => {
-        console.error(`WebSocket error for ${selectedVehicle}:`, err);
-        setError(`WebSocket error: ${err.message || 'Connection failed'}`);
-        setLoading(false);
-      };
-
-      wsRef.current.onclose = () => {
-        console.log(`WebSocket closed for ${selectedVehicle}.`);
-        if (reconnectAttempts.current < maxReconnectAttempts) {
-          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000);
-          console.log(`Reconnecting in ${delay}ms... Attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts}`);
-          setTimeout(() => {
-            reconnectAttempts.current += 1;
-            connectWebSocket();
-          }, delay);
-        } else {
-          setError('Max WebSocket reconnection attempts reached');
-          setLoading(false);
-        }
-      };
-    } catch (err) {
-      setError(err.message);
-      setLoading(false);
-    }
-  };
+  const mockHistoricalData = [
+    {
+      time: new Date(Date.now() - 9 * 60 * 1000).toLocaleTimeString(),
+      soc: 74.0,
+      stackVoltage: 645.0,
+      avgTemp: 31.0,
+    },
+    {
+      time: new Date(Date.now() - 8 * 60 * 1000).toLocaleTimeString(),
+      soc: 74.2,
+      stackVoltage: 646.5,
+      avgTemp: 31.2,
+    },
+    {
+      time: new Date(Date.now() - 7 * 60 * 1000).toLocaleTimeString(),
+      soc: 74.5,
+      stackVoltage: 647.8,
+      avgTemp: 31.5,
+    },
+    {
+      time: new Date(Date.now() - 6 * 60 * 1000).toLocaleTimeString(),
+      soc: 74.8,
+      stackVoltage: 648.2,
+      avgTemp: 31.8,
+    },
+    {
+      time: new Date(Date.now() - 5 * 60 * 1000).toLocaleTimeString(),
+      soc: 75.0,
+      stackVoltage: 649.0,
+      avgTemp: 32.0,
+    },
+    {
+      time: new Date(Date.now() - 4 * 60 * 1000).toLocaleTimeString(),
+      soc: 75.1,
+      stackVoltage: 649.5,
+      avgTemp: 32.2,
+    },
+    {
+      time: new Date(Date.now() - 3 * 60 * 1000).toLocaleTimeString(),
+      soc: 75.2,
+      stackVoltage: 649.8,
+      avgTemp: 32.3,
+    },
+    {
+      time: new Date(Date.now() - 2 * 60 * 1000).toLocaleTimeString(),
+      soc: 75.3,
+      stackVoltage: 650.0,
+      avgTemp: 32.4,
+    },
+    {
+      time: new Date(Date.now() - 1 * 60 * 1000).toLocaleTimeString(),
+      soc: 75.4,
+      stackVoltage: 650.1,
+      avgTemp: 32.5,
+    },
+    {
+      time: new Date(Date.now()).toLocaleTimeString(),
+      soc: 75.5,
+      stackVoltage: 650.123,
+      avgTemp: 32.5,
+    },
+  ];
 
   useEffect(() => {
-    if (user?.token) {
-      connectWebSocket();
-    } else {
-      setError('No authentication token provided');
+    // Simulate initial data load with mock data
+    setTimeout(() => {
+      setData(mockData);
+      setHistoricalData(mockHistoricalData);
       setLoading(false);
-    }
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
-  }, [user?.token, selectedVehicle]);
+      setIsInitialLoad(false);
+    }, 1000); // Simulate network delay
+  }, []);
 
   if (loading && isInitialLoad) {
     return (

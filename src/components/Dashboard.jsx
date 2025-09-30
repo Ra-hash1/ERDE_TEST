@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Gauge, Battery, Settings, AlertCircle, Car } from "lucide-react";
+import { Gauge, Battery, Settings, AlertCircle, Car, FileText } from "lucide-react";
 
 function Dashboard({ user }) {
   const navigate = useNavigate();
@@ -35,6 +35,13 @@ function Dashboard({ user }) {
       path: `/vehicle-data/${selectedVehicle}`,
       gradient: "from-purple-500/20 to-violet-600/20",
     },
+    {
+      title: "Daily Reports",
+      description: "View trip-wise performance and analytics.",
+      icon: <FileText className="w-10 h-10 text-orange-400" />,
+      path: `/daily-reports`,
+      gradient: "from-orange-500/20 to-yellow-600/20",
+    },
   ];
 
   const handleNavigate = (path) => {
@@ -53,7 +60,7 @@ function Dashboard({ user }) {
         <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-400 via-red-400 to-orange-300 bg-clip-text text-transparent mb-12">
           Dashboard - {selectedVehicle}
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8 max-w-5xl w-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl w-full">
           {cards.map((card, index) => (
             <div
               key={index}
